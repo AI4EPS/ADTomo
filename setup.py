@@ -8,7 +8,7 @@ setup(
     ext_modules=[
         CppExtension(
             name="eik2d_cpp",
-            sources=[],
+            sources=["adtomo/Cpp/Eikonal2D.cpp"],
             extra_compile_args=[],
         )
     ],
