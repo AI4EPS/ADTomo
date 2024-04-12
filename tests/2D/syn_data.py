@@ -156,7 +156,7 @@ for i, station in stations.iterrows():
     for j, event in events.iterrows():
         event_index += 1
         x_km,y_km,z_km = event["grid_x"],event["grid_y"],event["grid_z"]
-        print(' jj= ', j ,event["grid_x"],event["grid_y"],event["z_km"])
+        # print(' jj= ', j ,event["grid_x"],event["grid_y"],event["z_km"])
         arrival_time = time + timedelta(seconds=float(txyz[j]))
         pick = [station["station_id"], arrival_time.strftime("%Y-%m-%dT%H:%M:%S.%f"), event_index]
         picks.append(pick)
