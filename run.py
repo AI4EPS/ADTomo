@@ -20,10 +20,10 @@ from pyproj import Proj
 import argparse
 
 parser = argparse.ArgumentParser(description="PyTorch Detection Training", add_help=True)
-parser.add_argument("--config", default="config.json", type=str, help="config file")
-parser.add_argument("--stations", type=str, default="./stations.json", help="station json")
-parser.add_argument("--picks", type=str, default="./picks.csv", help="picks csv")
-parser.add_argument("--events", type=str, default="./events.csv", help="events csv")
+parser.add_argument("--config", default="tests/2D/config.json", type=str, help="config file")
+parser.add_argument("--stations", type=str, default="tests/2D/stations.json", help="station json")
+parser.add_argument("--picks", type=str, default="tests/2D/picks.csv", help="picks csv")
+parser.add_argument("--events", type=str, default="tests/2D/events.csv", help="events csv")
 parser.add_argument("-j", "--workers", default=0, type=int, metavar="N", help="number of data loading workers (default: 4)")
 parser.add_argument("--opt", default="lbfgs", type=str, help="optimizer")
 args = parser.parse_args()
