@@ -1,29 +1,27 @@
-import torch
-from torch import nn
-import numpy as np
-import pandas as pd
+import argparse
 import json
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.utils.data import DataLoader
+from datetime import datetime, timedelta
 
 import eik2d_cpp
-from data import PhaseDataset
-from optimize import optimize
-from model import Eikonal2D
-
 import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
+import numpy as np
 import pandas as pd
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
 from pyproj import Proj
+from torch import nn
+from torch.utils.data import DataLoader
 
-import argparse
+from adtomo.data import PhaseDataset
+from adtomo.model import Eikonal2D
+from adtomo.optimize import optimize
 
 parser = argparse.ArgumentParser(description="PyTorch Detection Training", add_help=True)
-parser.add_argument("--config", default="config.json", type=str, help="config file")
-parser.add_argument("--stations", type=str, default="./stations.json", help="station json")
-parser.add_argument("--picks", type=str, default="./picks.csv", help="picks csv")
-parser.add_argument("--events", type=str, default="./events.csv", help="events csv")
+parser.add_argument("--config", default="tests/2D/config.json", type=str, help="config file")
+parser.add_argument("--stations", type=str, default="tests/2D/stations.json", help="station json")
+parser.add_argument("--picks", type=str, default="tests/2D/picks.csv", help="picks csv")
+parser.add_argument("--events", type=str, default="tests/2D/events.csv", help="events csv")
 parser.add_argument("-j", "--workers", default=0, type=int, metavar="N", help="number of data loading workers (default: 4)")
 parser.add_argument("--opt", default="lbfgs", type=str, help="optimizer")
 args = parser.parse_args()

@@ -3,9 +3,9 @@
 
 #include <vector>
 #include <algorithm>
-#include "eigen/Core"
-#include "eigen/SparseCore"
-#include "eigen/SparseLU"
+#include "../eigen/Eigen/Core"
+#include "../eigen/Eigen/SparseCore"
+#include "../eigen/Eigen/SparseLU"
 #include <vector>
 #include <iostream>
 #include <utility>  

@@ -1,7 +1,9 @@
+import numpy as np
 import torch
 import torch.optim as optim
-import numpy as np
-from model import Eikonal2D
+
+from .model import Eikonal2D
+
 
 def optimize(args, config, data_loader, eikonal_2d):
     if (args.opt.lower() == "lbfgs") or (args.opt.lower() == "bfgs"):

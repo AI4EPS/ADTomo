@@ -3,5 +3,12 @@
 *.o
 *.zip
 
+*.png
+*.csv
+*.json
+*.egg
+
 adtomo/eigen
+build/
+__pycache__
 .DS_Store
