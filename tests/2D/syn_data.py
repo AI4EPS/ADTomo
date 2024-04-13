@@ -1,16 +1,16 @@
-import torch
+import json
+from datetime import datetime, timedelta
+
+import eik2d_cpp
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import json
+import torch
 import torch.nn.functional as F
 import torch.optim as optim
-import eik2d_cpp
-
-import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
-import pandas as pd
 from pyproj import Proj
-from model import Eikonal2D
+
+from adtomo.model import Eikonal2D
 
 # Debug 
 plotfield = True
