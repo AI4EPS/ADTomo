@@ -1,7 +1,6 @@
 import json
 from datetime import datetime, timedelta
 
-import eik2d_cpp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -11,6 +10,7 @@ import torch.optim as optim
 from pyproj import Proj
 
 from adtomo.model import Eikonal2D
+import eik2d_cpp
 
 # Debug 
 plotfield = True
