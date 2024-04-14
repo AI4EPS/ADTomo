@@ -17,8 +17,21 @@ def download_eigen(eigen_dir="./adtomo/eigen"):
             os.rename(os.path.join(eigen_dir, eigen_unzipped_dir_name, filename), os.path.join(eigen_dir, filename))
         os.rmdir(os.path.join(eigen_dir, eigen_unzipped_dir_name))  # Clean up the unzipped directory
 
+# Download LibTorch ## To Update
+def download_libtorch(libtorch_dir="./adtomo/libtorch"):
+      libtorch_zip_url = "https://download.pytorch.org/libtorch/nightly/cpu/libtorch-shared-with-deps-latest.zip"
+      if not os.path.exists(libtorch_dir):
+            os.makedirs(libtorch_dir,exist_ok=True)
+            subprocess.check_call(["wget", "-O", "libtorch.zip", libtorch_zip_url])
+            subprocess.check_call(["unzip", "libtorch.zip", "-d", libtorch_dir])
+            libtorch_unzipped_dir_name = os.listdir(libtorch_dir)[0]
+            for filename in os.listdir(os.path.join(libtorch_dir, libtorch_unzipped_dir_name)):
+                  os.rename(os.path.join(libtorch_dir, libtorch_unzipped_dir_name, filename), os.path.join(libtorch_dir, filename))
+            os.rmdir(os.path.join(libtorch_dir, libtorch_unzipped_dir_name))  # Clean up the unzipped directory
+
 
 download_eigen()
+download_libtorch()
 
 setup(
     name="adtomo",
@@ -30,6 +43,7 @@ setup(
             sources=["adtomo/eikonal/Eikonal2D.cpp"],
             include_dirs=[
                 "./adtomo/eigen",
+                "./adtomo/libtorch",
             ],
             extra_compile_args=[],
             language="c++",
