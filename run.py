@@ -12,7 +12,7 @@ from pyproj import Proj
 from torch import nn
 from torch.utils.data import DataLoader
 
-from adtomo import PhaseDataset, Eikonal2D, optimize
+from adtomo import PhaseDataset, Eikonal2D
 
 parser = argparse.ArgumentParser(description="PyTorch Detection Training", add_help=True)
 parser.add_argument("--config", default="tests/2D/config.json", type=str, help="config file")
