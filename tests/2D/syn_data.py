@@ -9,8 +9,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from pyproj import Proj
 
-from adtomo.model import Eikonal2D
-import eik2d_cpp
+from adtomo import Eikonal2D
 
 # Debug 
 plotfield = True
