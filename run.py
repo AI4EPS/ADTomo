@@ -2,7 +2,6 @@ import argparse
 import json
 from datetime import datetime, timedelta
 
-import eik2d_cpp
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -13,9 +12,7 @@ from pyproj import Proj
 from torch import nn
 from torch.utils.data import DataLoader
 
-from adtomo.data import PhaseDataset
-from adtomo.model import Eikonal2D
-from adtomo.optimize import optimize
+from adtomo import PhaseDataset, Eikonal2D
 
 parser = argparse.ArgumentParser(description="PyTorch Detection Training", add_help=True)
 parser.add_argument("--config", default="tests/2D/config.json", type=str, help="config file")
