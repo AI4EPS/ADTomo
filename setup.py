@@ -36,7 +36,7 @@ download_libtorch()
 setup(
     name="adtomo",
     version="0.1.0",
-    packages=find_packages(),
+    packages=["adtomo"],
     ext_modules=[
         CppExtension(
             name="eik2d_cpp",
