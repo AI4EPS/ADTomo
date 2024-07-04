@@ -4,7 +4,7 @@ Order to run code
 - 3D/run.py
 
 #
-python setup.py \
+python setup.py install\
 Downloads Libtorch and Eigen libraries as well as setting up customops eik2d_cpp and eik3d_cpp
 
 python syn_data_3d.py \
