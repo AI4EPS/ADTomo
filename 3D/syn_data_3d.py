@@ -1,6 +1,3 @@
-# This is most up to date and needs to be cleaned
-# This worked for the benchmark without problems
-
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
