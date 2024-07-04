@@ -162,4 +162,8 @@ picks = pd.DataFrame(picks, columns=["station_id", "phase_time", "event_index", 
 picks.to_csv(f"./torch_syn_picks.csv", index=False)
 
 
+sampled_picks = picks.sample(n=len(picks)//2,random_state=0,replace=False)
+sampled_picks.sort_values(by=['station_id','event_index'],inplace=True)
+sampled_picks.to_csv(f"./torch_syn_picks_sampled.csv", index=False)
+
 print("* Done")
