@@ -23,7 +23,7 @@ from model import Eikonal_3D
 ### --- ### 
 save_file = 'result.h5' # name for output file
 pcks = "./torch_syn_picks.csv"        # computed with syn_data
-# pcks = "./data_benchmark/picks.csv" # computed with julia
+# pcks = "./data_benchmark_checker/picks.csv" # computed with julia
 
 sts = "./data_benchmark/stations.csv"
 evnts = "./data_benchmark/events.csv"
