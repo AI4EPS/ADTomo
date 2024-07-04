@@ -27,6 +27,11 @@ config = {
     "tol":1e-3,
 }
 
+
+anomaly = False # User defined
+# True puts 2 anomalies in the domain
+# False gives a checkerboard
+
 ### Set parameters for domain
 h = config["h"]
 maxdepth = config["maxdepth"]
@@ -83,7 +88,7 @@ with open(f"./config.json", "w") as f:
 ##################################################################################################################################
 # ---> Prepare Domain 
 ftest = torch.ones(m,n,l,dtype=torch.double) * 6.0
-anomaly = False
+
 
 if anomaly:
     ftest[20-1:40-1, 20-1:40-1, 8-1:14-1] = 6.5
