@@ -6,12 +6,10 @@
 #include <cstring>
 #include <cstdio>
 #include <fstream>
-#include "Eigen/Core"
-#include "Eigen/SparseCore"
-#include "Eigen/SparseLU"
-// #include <eigen3/Eigen/Core>
-// #include <eigen3/Eigen/SparseCore>
-// #include <eigen3/Eigen/SparseLU>
+#include "../Eigen/Core"
+#include "../Eigen/SparseCore"
+#include "../Eigen/SparseLU"
+
 #include <set>
 typedef Eigen::SparseMatrix<double> SpMat; // declares a column-major sparse matrix type of double
 typedef Eigen::Triplet<double> T;
