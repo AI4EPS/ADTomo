@@ -47,6 +47,16 @@ setup(
             ],
             extra_compile_args=[],
             language="c++",
+        ),
+        CppExtension(
+            name="eik3d_cpp",
+            sources=["adtomo/eikonal/Eikonal3D.cpp"],
+            include_dirs=[
+                "./adtomo/eigen",
+                "./adtomo/libtorch",
+            ],
+            extra_compile_args=[],
+            language="c++",
         )
     ],
     cmdclass={"build_ext": BuildExtension.with_options(no_cuda=True)},  # Disables CUDA, compile only for CPU
