@@ -9,6 +9,9 @@
 *.egg
 
 adtomo/eigen
+adtomo/libtorch/
 build/
 __pycache__
 .DS_Store
+
+
