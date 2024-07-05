@@ -1,12 +1,17 @@
+#include <torch/extension.h>
 #include <vector>
 #include <algorithm>
-#include <Eigen/Core>
-
-#include <eigen3/Eigen/SparseCore>
-#include <eigen3/Eigen/SparseLU>
 #include <vector>
 #include <iostream>
 #include <utility>
+
+// #include "../eigen/Eigen/Core"
+// #include "../eigen/Eigen/SparseCore"
+// #include "../eigen/Eigen/SparseLU"
+#include "Eigen/Core"
+#include "Eigen/SparseCore"
+#include "Eigen/SparseLU"
+
 typedef Eigen::SparseMatrix<double> SpMat; // declares a column-major sparse matrix type of double
 typedef Eigen::Triplet<double> T;
 
@@ -225,4 +230,32 @@ void backward(
   {
     grad_f[i] = -res[i] * dFdf[i];
   }
+}
+
+// PyTorch extension interface
+torch::Tensor eikonal_forward(torch::Tensor f, double h, int ix, int jx) {
+    auto m = f.size(0) - 1;
+    auto n = f.size(1) - 1;
+    
+    auto u = torch::zeros_like(f);
+    
+    forward(u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, ix, jx);
+    
+    return u;
+}
+
+torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor f, double h, int ix, int jx) {
+    auto m = f.size(0) - 1;
+    auto n = f.size(1) - 1;
+    
+    auto grad_f = torch::zeros_like(f);
+    
+    backward(grad_f.data_ptr<double>(), grad_u.data_ptr<double>(), u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, ix, jx);
+    
+    return grad_f;
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("forward", &eikonal_forward, "Eikonal2D forward");
+    m.def("backward", &eikonal_backward, "Eikonal2D backward");
 }
