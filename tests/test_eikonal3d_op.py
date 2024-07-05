@@ -1,4 +1,5 @@
 import eikonal3d_op
+import matplotlib.pyplot as plt
 import torch
 
 
@@ -34,12 +35,14 @@ if __name__ == "__main__":
     m, n, l = 10, 10, 10
 
     # Create initial conditions (u0) and speed function (f)
-    u0 = torch.ones((m, n, l), dtype=torch.float64) * 1000.0
-    f = torch.ones((m, n, l), dtype=torch.float64, requires_grad=True)
+    u0_ = torch.ones((m, n, l), dtype=torch.float64) * 1000.0
+    f_ = torch.ones((m, n, l), dtype=torch.float64)
 
-    # Set a point source at the center
-    center = m // 2
-    u0[0, 0, 0] = 0.0
+    u0_[0, 0, 0] = 0.0
+    f_[m // 3 : 2 * m // 3, n // 3 : 2 * n // 3, 0] /= 5.0
+
+    u0 = torch.nn.Parameter(u0_, requires_grad=True)
+    f = torch.nn.Parameter(f_, requires_grad=True)
 
     # Define the grid spacing
     h = 1.0
@@ -55,14 +58,31 @@ if __name__ == "__main__":
     print(u[:, :, 0])
 
     # Compute some loss (e.g., mean of u)
-    loss = u.mean()
+    # loss = u.mean()
+    loss = u[m - 1, n - 1, 0]
 
     # Backward pass
     loss.backward()
 
     # Print gradients
     print("\nGradient of u0:")
-    # print(u0.grad)
+    print(u0.grad.detach().numpy()[:, :, 0])
 
     print("\nGradient of f:")
-    # print(f.grad)
+    print(f.grad.detach().numpy()[:, :, 0])
+
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
+    im = ax[0].imshow(f.detach().numpy()[:, :, 0], cmap="viridis")
+    fig.colorbar(im, ax=ax[0])
+    ax[0].set_title("Speed function f")
+    im = ax[1].imshow(u.detach().numpy()[:, :, 0], cmap="viridis")
+    fig.colorbar(im, ax=ax[1])
+    ax[1].set_title("Solution u")
+    # im = ax[1].imshow(u0.grad.detach().numpy()[:, :, 0], cmap="viridis")
+    # fig.colorbar(im, ax=ax[1])
+    # ax[1].set_title("Initial condition u0")
+    im = ax[2].imshow(f.grad.detach().numpy()[:, :, 0], cmap="viridis")
+    fig.colorbar(im, ax=ax[2])
+    ax[2].set_title("Gradient of f")
+
+    plt.savefig("eikonal3d.png")
