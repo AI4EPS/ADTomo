@@ -1,15 +1,13 @@
-#include <torch/torch.h>
-#include <torch/extension.h>
-
 #include <vector>
 #include <algorithm>
-#include "../eigen/Eigen/Core"
-#include "../eigen/Eigen/SparseCore"
-#include "../eigen/Eigen/SparseLU"
+#include <Eigen/Core>
+
+#include <eigen3/Eigen/SparseCore>
+#include <eigen3/Eigen/SparseLU>
 #include <vector>
 #include <iostream>
 #include <utility>  
-typedef Eigen::SparseMatrix<double> SpMat;
+typedef Eigen::SparseMatrix<double> SpMat; // declares a column-major sparse matrix type of double
 typedef Eigen::Triplet<double> T;
 
 
@@ -21,58 +19,45 @@ double solution(double a, double b, double f, double h){
     return (a+b+sqrt(2*f*f*h*h-(a-b)*(a-b)))/2;
 }
 
-void sweep(torch::Tensor &u, 
+void sweep(double *u, 
     const std::vector<int>& I, const std::vector<int>& J,
-    const torch::Tensor &f, int m, int n, double h, int ix, int jx){
-
-    auto uval = u.accessor<double,1>();
-    auto fval = f.accessor<double,1>();
-
+    const double *f, int m, int n, double h, int ix, int jx){
     for(int i: I){
       for(int j:J){
         if (i==ix && j==jx) continue; 
         double a, b;
         if (i==0){
-          a = uval[j*(m+1)+1];
+          a = u[j*(m+1)+1];
         }
         else if (i==m){
-          a = uval[j*(m+1)+m-1];
+          a = u[j*(m+1)+m-1];
         }
         else{
-          a = std::min(uval[j*(m+1)+i+1], uval[j*(m+1)+i-1]);
+          a = std::min(u[j*(m+1)+i+1], u[j*(m+1)+i-1]);
         }
         if (j==0){
-          b = uval[(m+1)+i];
+          b = u[(m+1)+i];
         }
         else if (j==n){
-          b = uval[(n-1)*(m+1)+i];
+          b = u[(n-1)*(m+1)+i];
         }
         else{
-          b = std::min(uval[(j-1)*(m+1)+i], uval[(j+1)*(m+1)+i]);
+          b = std::min(u[(j-1)*(m+1)+i], u[(j+1)*(m+1)+i]);
         }
-        double u_new = solution(a, b, fval[j*(m+1)+i], h);
-        uval[j*(m+1)+i] = std::min(uval[j*(m+1)+i],u_new);
+        double u_new = solution(a, b, f[j*(m+1)+i], h);
+        u[j*(m+1)+i] = std::min(u[j*(m+1)+i],u_new);
       }
     }
     
 }
 
-void forward(torch::Tensor &u, const torch::Tensor &f, int m, int n, double h, int ix, int jx){
-
-  m=m-1;
-  n=n-1;
-
-  auto uval = u.accessor<double,1>();
-  double *udat = u.data_ptr<double>();
-  auto fval = f.accessor<double,1>();
-
+void forward(double *u, const double *f, int m, int n, double h, int ix, int jx){
   for(int i=0;i<m+1;i++){
     for(int j=0;j<n+1;j++){
-      uval[j*(m+1)+i] = 100000.0;
-      if (i==ix && j==jx) uval[j*(m+1)+i] = 0.0;
+      u[j*(m+1)+i] = 100000.0;
+      if (i==ix && j==jx) u[j*(m+1)+i] = 0.0;
     }
   }
-
   std::vector<int> I, J, iI, iJ;
   for(int i=0;i<m+1;i++) {
     I.push_back(i);
@@ -83,15 +68,16 @@ void forward(torch::Tensor &u, const torch::Tensor &f, int m, int n, double h, i
     iJ.push_back(n-i);
   }
 
-  Eigen::VectorXd uvec_old = Eigen::Map<const Eigen::VectorXd>(udat, (m+1)*(n+1)), uvec;
+  Eigen::VectorXd uvec_old = Eigen::Map<const Eigen::VectorXd>(u, (m+1)*(n+1)), uvec;
   bool converged = false;
   for(int i = 0;i<100;i++){
     sweep(u, I, J, f, m, n, h, ix, jx);
     sweep(u, iI, J, f, m, n, h, ix, jx);
     sweep(u, iI, iJ, f, m, n, h, ix, jx);
     sweep(u, I, iJ, f, m, n, h, ix, jx);
-    uvec = Eigen::Map<const Eigen::VectorXd>(udat, (m+1)*(n+1));
+    uvec = Eigen::Map<const Eigen::VectorXd>(u, (m+1)*(n+1));
     double err = (uvec-uvec_old).norm()/uvec_old.norm();
+    // printf("ERROR AT ITER %d: %g\n", i, err);
     if (err < 1e-8){ 
       converged = true;
       break; 
@@ -107,24 +93,15 @@ void forward(torch::Tensor &u, const torch::Tensor &f, int m, int n, double h, i
 }
 
 void backward(
-  torch::Tensor &grad_f, 
-  torch::Tensor &grad_u,
-  const torch::Tensor &u, const torch::Tensor &f, int m, int n, double h, int ix, int jx){
-
-    m=m-1;
-    n=n-1;
-
-    auto fval = f.accessor<double,1>();
-    auto uval = u.accessor<double,1>();
-    auto grad_fval = grad_f.accessor<double,1>();
-    double *grad_udat = grad_u.data_ptr<double>();
+  double *grad_f, 
+  const double * grad_u,
+  const double *u, const double *f, int m, int n, double h, int ix, int jx){
 
     Eigen::VectorXd dFdf((m+1)*(n+1));
     for (int i=0;i<(m+1)*(n+1);i++){
-      dFdf[i] = -2*fval[i]*h*h;
+      dFdf[i] = -2*f[i]*h*h;
     }
-    dFdf[jx*(m+1)+ix] = 0.0; 
-    double val = 0.0;
+    dFdf[jx*(m+1)+ix] = 0.0;
     std::vector<T> triplets;
 
     for(int j=0;j<n+1;j++){
@@ -135,98 +112,89 @@ void backward(
           continue;
         }
 
+        // double val = 0.0;
         if(i==0){
-          if(uval[idx]>uval[j*(m+1)+1]){
-            triplets.push_back(T(idx, idx, 2*(uval[idx]-uval[j*(m+1)+1]) ));
-            triplets.push_back(T(idx, j*(m+1)+1, 2*(uval[j*(m+1)+1]-uval[idx]) ));
+          if(u[idx]>u[j*(m+1)+1]){
+            triplets.push_back(T(idx, idx, 2*(u[idx]-u[j*(m+1)+1]) ));
+            triplets.push_back(T(idx, j*(m+1)+1, 2*(u[j*(m+1)+1]-u[idx]) ));
 
-          val += (uval[idx]-uval[j*(m+1)+1])*(uval[idx]-uval[j*(m+1)+1]);
+            // val += (u[idx]-u[j*(m+1)+1])*(u[idx]-u[j*(m+1)+1]);
           }
         }
         else if (i==m){
 
-          if(uval[idx]>uval[j*(m+1)+m-1]){
-            triplets.push_back(T(idx, idx, 2*(uval[idx]-uval[j*(m+1)+m-1]) ));
-            triplets.push_back(T(idx, j*(m+1)+m-1, 2*(uval[j*(m+1)+m-1]-uval[idx]) ));
+          if(u[idx]>u[j*(m+1)+m-1]){
+            triplets.push_back(T(idx, idx, 2*(u[idx]-u[j*(m+1)+m-1]) ));
+            triplets.push_back(T(idx, j*(m+1)+m-1, 2*(u[j*(m+1)+m-1]-u[idx]) ));
 
-          val += (uval[idx]-uval[j*(m+1)+m-1])*(uval[idx]-uval[j*(m+1)+m-1]);
+            // val += (u[idx]-u[j*(m+1)+m-1])*(u[idx]-u[j*(m+1)+m-1]);
           }
 
         }
         else {
 
-          double a = uval[j*(m+1)+i+1]>uval[j*(m+1)+i-1] ? uval[j*(m+1)+i-1] : uval[j*(m+1)+i+1];
-          if (uval[idx]>a){
-            triplets.push_back(T(idx, idx, 2*(uval[idx]-a) ));
-            if (uval[j*(m+1)+i+1]>uval[j*(m+1)+i-1])
-              triplets.push_back(T(idx, j*(m+1)+i-1, 2*(a-uval[idx]) ));
+          double a = u[j*(m+1)+i+1]>u[j*(m+1)+i-1] ? u[j*(m+1)+i-1] : u[j*(m+1)+i+1];
+          if (u[idx]>a){
+            triplets.push_back(T(idx, idx, 2*(u[idx]-a) ));
+            if (u[j*(m+1)+i+1]>u[j*(m+1)+i-1])
+              triplets.push_back(T(idx, j*(m+1)+i-1, 2*(a-u[idx]) ));
             else
-              triplets.push_back(T(idx, j*(m+1)+i+1, 2*(a-uval[idx]) ));
+              triplets.push_back(T(idx, j*(m+1)+i+1, 2*(a-u[idx]) ));
 
-            val += (a-uval[idx])*(a-uval[idx]);
+            // val += (a-u[idx])*(a-u[idx]);
           }
 
         }
 
         if (j==0){
-          if (uval[idx]>uval[m+1+i]){
-            triplets.push_back(T(idx, idx, 2*(uval[idx]-uval[m+1+i]) ));
-            triplets.push_back(T(idx, (m+1)+i, 2*(uval[m+1+i]-uval[idx]) ));
+          if (u[idx]>u[m+1+i]){
+            triplets.push_back(T(idx, idx, 2*(u[idx]-u[m+1+i]) ));
+            triplets.push_back(T(idx, (m+1)+i, 2*(u[m+1+i]-u[idx]) ));
 
-          val += (uval[idx]-uval[m+1+i])*(uval[idx]-uval[m+1+i]);
+            // val += (u[idx]-u[m+1+i])*(u[idx]-u[m+1+i]);
           }
 
         }
         else if(j==n){
 
-          if (uval[idx]>uval[(n-1)*(m+1)+i]){
-            triplets.push_back(T(idx, idx, 2*(uval[idx]-uval[(n-1)*(m+1)+i]) ));
-            triplets.push_back(T(idx, (n-1)*(m+1)+i, 2*(uval[(n-1)*(m+1)+i]-uval[idx]) ));
+          if (u[idx]>u[(n-1)*(m+1)+i]){
+            triplets.push_back(T(idx, idx, 2*(u[idx]-u[(n-1)*(m+1)+i]) ));
+            triplets.push_back(T(idx, (n-1)*(m+1)+i, 2*(u[(n-1)*(m+1)+i]-u[idx]) ));
 
-          val += (uval[idx]-uval[(n-1)*(m+1)+i])*(uval[idx]-uval[(n-1)*(m+1)+i]);
+            // val += (u[idx]-u[(n-1)*(m+1)+i])*(u[idx]-u[(n-1)*(m+1)+i]);
           }
 
         }
         else {
-          double b = uval[(j+1)*(m+1)+i]>uval[(j-1)*(m+1)+i] ? uval[(j-1)*(m+1)+i] : uval[(j+1)*(m+1)+i];
-          if (uval[idx]>b){
-            triplets.push_back(T(idx, idx, 2*(uval[idx]-b) ));
-            if (uval[(j+1)*(m+1)+i]>uval[(j-1)*(m+1)+i])
-              triplets.push_back(T(idx, (j-1)*(m+1)+i, 2*(b-uval[idx]) ));
+          double b = u[(j+1)*(m+1)+i]>u[(j-1)*(m+1)+i] ? u[(j-1)*(m+1)+i] : u[(j+1)*(m+1)+i];
+          if (u[idx]>b){
+            triplets.push_back(T(idx, idx, 2*(u[idx]-b) ));
+            if (u[(j+1)*(m+1)+i]>u[(j-1)*(m+1)+i])
+              triplets.push_back(T(idx, (j-1)*(m+1)+i, 2*(b-u[idx]) ));
             else
-              triplets.push_back(T(idx, (j+1)*(m+1)+i, 2*(b-uval[idx]) ));
+              triplets.push_back(T(idx, (j+1)*(m+1)+i, 2*(b-u[idx]) ));
 
-            val += (b-uval[idx])*(b-uval[idx]);
+              // val += (b-u[idx])*(b-u[idx]);
           }
         }
 
-        val -= fval[idx]*fval[idx]*h*h;
+        // val -= f[idx]*f[idx]*h*h;
+        // printf("VAL = %g\n", val);
         
       }
     }
-
 
     SpMat A((m+1)*(n+1), (m+1)*(n+1));
     A.setFromTriplets(triplets.begin(), triplets.end());
     A = A.transpose();
     Eigen::SparseLU<SpMat> solver;
      
-    Eigen::VectorXd g = Eigen::Map<const Eigen::VectorXd>(grad_udat, (m+1)*(n+1));
+    Eigen::VectorXd g = Eigen::Map<const Eigen::VectorXd>(grad_u, (m+1)*(n+1));
     solver.analyzePattern(A);
-
     solver.factorize(A);
-
     Eigen::VectorXd res = solver.solve(g);
-
     for(int i=0;i<(m+1)*(n+1);i++){
-      grad_fval[i] = -res[i] * dFdf[i];
+      grad_f[i] = -res[i] * dFdf[i];
     }
     
 }
-
-// pybind module
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("forward", &forward, "EIK2D forward");
-  m.def("backward", &backward, "EIK2D backward");
-}
-
