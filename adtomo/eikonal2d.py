@@ -14,34 +14,24 @@ def interp2d(time_table, r, z, rgrid, zgrid, h):
     nz = len(zgrid)
     assert time_table.shape == (nr, nz)
 
-    ir0 = np.floor((r - rgrid[0]) / h).clip(0, nr - 2).astype(np.int64)
-    iz0 = np.floor((z - zgrid[0]) / h).clip(0, nz - 2).astype(np.int64)
-    r = np.clip(r, rgrid[0], rgrid[-1])
-    z = np.clip(z, zgrid[0], zgrid[-1])
+    ir0 = np.floor((r - rgrid[0]) / h).clip(0, nr - 2).astype(int)
+    iz0 = np.floor((z - zgrid[0]) / h).clip(0, nz - 2).astype(int)
     ir1 = ir0 + 1
     iz1 = iz0 + 1
+    r = (np.clip(r, rgrid[0], rgrid[-1]) - rgrid[0]) / h
+    z = (np.clip(z, zgrid[0], zgrid[-1]) - zgrid[0]) / h
 
     ## https://en.wikipedia.org/wiki/Bilinear_interpolation
-    r0 = ir0 * h + rgrid[0]
-    r1 = ir1 * h + rgrid[0]
-    z0 = iz0 * h + zgrid[0]
-    z1 = iz1 * h + zgrid[0]
-
     Q00 = time_table[ir0, iz0]
     Q01 = time_table[ir0, iz1]
     Q10 = time_table[ir1, iz0]
     Q11 = time_table[ir1, iz1]
 
     t = (
-        1.0
-        / (r1 - r0)
-        / (z1 - z0)
-        * (
-            Q00 * (r1 - r) * (z1 - z)
-            + Q10 * (r - r0) * (z1 - z)
-            + Q01 * (r1 - r) * (z - z0)
-            + Q11 * (r - r0) * (z - z0)
-        )
+        Q00 * (ir1 - r) * (iz1 - z)
+        + Q10 * (r - ir0) * (iz1 - z)
+        + Q01 * (ir1 - r) * (z - iz0)
+        + Q11 * (r - ir0) * (z - iz0)
     )
 
     return t
@@ -105,49 +95,30 @@ class Eikonal2D(torch.nn.Module):
         self.xgrid = torch.arange(0, nx, dtype=dtype) * h
         self.ygrid = torch.arange(0, ny, dtype=dtype) * h
 
-        # check
-
-    # def calc_time(self, event_loc, station_loc, type):
-
-    #     for event_xyz, station_xyz in zip(event_loc, station_loc):
-    #         print(event_xyz, station_xyz)
-
-    #         break
-    #     return Eikonal2DFunction.apply(self.vp, 1.0, 0, 0)
-
     def interp(self, time_table, x, y):
         nx = len(self.xgrid)
         ny = len(self.ygrid)
         assert time_table.shape == (nx, ny)
 
-        ir0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, nx - 2).long()
-        iz0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, ny - 2).long()
-        x = torch.clamp(x, self.xgrid[0], self.xgrid[-1])
-        y = torch.clamp(y, self.ygrid[0], self.ygrid[-1])
-        ir1 = ir0 + 1
-        iz1 = iz0 + 1
+        ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, nx - 2).long()
+        iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, ny - 2).long()
+        ix1 = ix0 + 1
+        iy1 = iy0 + 1
+        x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
+        y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
 
         ## https://en.wikipedia.org/wiki/Bilinear_interpolation
-        r0 = ir0 * self.h + self.xgrid[0]
-        r1 = ir1 * self.h + self.xgrid[0]
-        z0 = iz0 * self.h + self.ygrid[0]
-        z1 = iz1 * self.h + self.ygrid[0]
 
-        Q00 = time_table[ir0, iz0]
-        Q01 = time_table[ir0, iz1]
-        Q10 = time_table[ir1, iz0]
-        Q11 = time_table[ir1, iz1]
+        Q00 = time_table[ix0, iy0]
+        Q01 = time_table[ix0, iy1]
+        Q10 = time_table[ix1, iy0]
+        Q11 = time_table[ix1, iy1]
 
         t = (
-            1.0
-            / (r1 - r0)
-            / (z1 - z0)
-            * (
-                Q00 * (r1 - x) * (z1 - y)
-                + Q10 * (x - r0) * (z1 - y)
-                + Q01 * (r1 - x) * (y - z0)
-                + Q11 * (x - r0) * (y - z0)
-            )
+            Q00 * (ix1 - x) * (iy1 - y)
+            + Q10 * (x - ix0) * (iy1 - y)
+            + Q01 * (ix1 - x) * (y - iy0)
+            + Q11 * (x - ix0) * (y - iy0)
         )
 
         return t
@@ -210,7 +181,7 @@ if __name__ == "__main__":
         os.makedirs(data_path, exist_ok=True)
     nx = 10
     ny = 10
-    h = 1
+    h = 3.0
     eikonal_config = {"nx": nx, "ny": ny, "h": h}
     with open(f"{data_path}/config.json", "w") as f:
         json.dump(eikonal_config, f)
@@ -229,9 +200,8 @@ if __name__ == "__main__":
     stations.to_csv(f"{data_path}/stations.csv", index=False)
     events = []
     for i in range(num_event):
-        x = np.random.uniform(0, nx * h)
-        y = np.random.uniform(0, ny * h)
-        # t = np.random.rand()
+        x = np.random.uniform(xgrid[0], xgrid[-1])
+        y = np.random.uniform(ygrid[0], ygrid[-1])
         t = i * 5
         events.append({"event_id": i, "event_time": t, "x_km": x, "y_km": y})
     events = pd.DataFrame(events)
@@ -278,6 +248,16 @@ if __name__ == "__main__":
     picks["station_index"] = picks["station_id"].map(stations.set_index("station_id")["station_index"])
     picks.to_csv(f"{data_path}/picks.csv", index=False)
     # %%
+    fig, ax = plt.subplots(1, 2, figsize=(12, 5))
+    im = ax[0].imshow(vp, cmap="viridis")
+    fig.colorbar(im, ax=ax[0])
+    ax[0].set_title("Vp")
+    im = ax[1].imshow(vs, cmap="viridis")
+    fig.colorbar(im, ax=ax[1])
+    ax[1].set_title("Vs")
+    plt.savefig(f"{data_path}/true2d_vp_vs.png")
+
+    # %%
     fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(5, 5))
     ax[0, 0].plot(stations["x_km"], stations["y_km"], "^", label="Station")
     ax[0, 0].plot(events["x_km"], events["y_km"], ".", label="Event")
@@ -285,7 +265,7 @@ if __name__ == "__main__":
     ax[0, 0].set_ylabel("y (km)")
     ax[0, 0].legend()
     ax[0, 0].set_title("Station and Event Locations")
-    plt.savefig(f"{data_path}/station_event.png")
+    plt.savefig(f"{data_path}/station_event_2d.png")
     # %%
     fig, ax = plt.subplots(2, 1, squeeze=False, figsize=(10, 10))
     picks = picks.merge(stations, on="station_id")
@@ -298,7 +278,8 @@ if __name__ == "__main__":
     ax[1, 0].scatter(events["event_time"], events["y_km"], c=events["event_index"].apply(mapping_color), marker="x")
     ax[1, 0].set_xlabel("Time (s)")
     ax[1, 0].set_ylabel("y (km)")
-    plt.savefig(f"{data_path}/picks.png")
+    plt.savefig(f"{data_path}/picks_2d.png")
+
     # %%
     ######################################### Load Synthetic Data #########################################
     data_path = "data"
@@ -340,7 +321,7 @@ if __name__ == "__main__":
     im = ax[1].imshow(eikonal2d.vs.detach().numpy(), cmap="viridis")
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Vs")
-    plt.savefig(f"{data_path}/initial_vp_vs.png")
+    plt.savefig(f"{data_path}/initial2d_vp_vs.png")
 
     optimizer = optim.LBFGS(params=eikonal2d.parameters(), max_iter=1000, line_search_fn="strong_wolfe")
     print("Initial loss:", loss.item())
@@ -363,4 +344,4 @@ if __name__ == "__main__":
     im = ax[1].imshow(eikonal2d.vs.detach().numpy(), cmap="viridis")
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Vs")
-    plt.savefig(f"{data_path}/inverted_vp_vs.png")
+    plt.savefig(f"{data_path}/inverted2d_vp_vs.png")

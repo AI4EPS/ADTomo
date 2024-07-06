@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <fstream>
 #include <set>
+// #include <iostream>
 
 // #include "../eigen/Eigen/Core"
 // #include "../eigen/Eigen/SparseCore"
@@ -91,7 +92,7 @@ void sweeping(double *u, const double *f, int m, int n, int l, double h)
 }
 
 void forward(double *u, const double *u0, const double *f, double h,
-             int m, int n, int l, double tol = 1e-6)
+             int m, int n, int l, double tol = 1e-8)
 {
     memcpy(u, u0, sizeof(double) * m * n * l);
     auto u_old = new double[m * n * l];
@@ -152,6 +153,7 @@ void backward(
 
                 if (u[this_id] == u0[this_id])
                 {
+                    // std::cout << "(1) zero id: " << this_id << std::endl;
                     zero_id.insert(this_id);
                     g[this_id] = 0.0;
                     continue;
@@ -189,8 +191,14 @@ void backward(
 
                 if (!this_id_is_not_zero)
                 {
+                    // std::cout << "(2) zero id: " << this_id << std::endl;
                     zero_id.insert(this_id);
                     g[this_id] = 0.0;
+                //     grad_u0[this_id] = 1.0;
+                // }
+                // else
+                // {
+                //     grad_u0[this_id] = 0.0;
                 }
             }
         }
@@ -198,6 +206,7 @@ void backward(
 
     if (zero_id.size() > 0)
     {
+        // std::cout << "total zero id: " << zero_id.size() << std::endl;
         for (auto &t : triplets)
         {
             if (zero_id.count(t.col()) || zero_id.count(t.row()))
