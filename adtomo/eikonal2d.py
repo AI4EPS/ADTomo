@@ -125,7 +125,6 @@ class Eikonal2D(torch.nn.Module):
 
     def forward(self, picks):
 
-        # %%
         loss = 0
         pred = []
         idx = []
@@ -211,8 +210,8 @@ if __name__ == "__main__":
     vp = torch.ones((nx, ny), dtype=torch.float64) * 6.0
     vs = vp / vpvs_ratio
 
-    vp[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3)] *= 1.1
-    vs[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3)] *= 1.1
+    # vp[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3)] *= 1.1
+    # vs[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3)] *= 1.1
 
     picks = []
     for j, station in stations.iterrows():
@@ -299,12 +298,16 @@ if __name__ == "__main__":
     vp = torch.ones((nx, ny), dtype=torch.float64) * 6.0
     vs = vp / 1.73
 
+    event_loc = events[["x_km", "y_km"]].values + np.random.randn(num_event, 2) * 3
+    # event_loc = events[["x_km", "y_km"]].values * 0.0 + stations[["x_km", "y_km"]].values.mean(axis=0)
+
     eikonal2d = Eikonal2D(
         num_event,
         num_station,
         stations[["x_km", "y_km"]].values,
         stations[["dt_s"]].values,
-        events[["x_km", "y_km"]].values,
+        # events[["x_km", "y_km"]].values,
+        event_loc,
         events[["event_time"]].values,
         vp,
         vs,
@@ -323,7 +326,16 @@ if __name__ == "__main__":
     ax[1].set_title("Vs")
     plt.savefig(f"{data_path}/initial2d_vp_vs.png")
 
-    optimizer = optim.LBFGS(params=eikonal2d.parameters(), max_iter=1000, line_search_fn="strong_wolfe")
+    eikonal2d.vp.requires_grad = False
+    eikonal2d.vs.requires_grad = False
+    eikonal2d.event_loc.weight.requires_grad = True
+    eikonal2d.event_time.weight.requires_grad = False
+    print(
+        "Optimizing parameters:\n"
+        + "\n".join([f"{name}: {param.size()}" for name, param in eikonal2d.named_parameters() if param.requires_grad]),
+    )
+    parameters = [param for param in eikonal2d.parameters() if param.requires_grad]
+    optimizer = optim.LBFGS(params=parameters, max_iter=1000, line_search_fn="strong_wolfe")
     print("Initial loss:", loss.item())
 
     def closure():
@@ -345,3 +357,24 @@ if __name__ == "__main__":
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Vs")
     plt.savefig(f"{data_path}/inverted2d_vp_vs.png")
+
+    # %%
+    fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(5, 5))
+    # ax[0, 0].plot(stations["x_km"], stations["y_km"], "^", label="Station")
+    ax[0, 0].plot(events["x_km"], events["y_km"], ".", label="True Events")
+    ax[0, 0].plot(event_loc[:, 0], event_loc[:, 1], "x", label="Initial Events")
+    for i in range(len(event_loc)):
+        ax[0, 0].plot(
+            [events["x_km"].iloc[i], event_loc[i, 0]], [events["y_km"].iloc[i], event_loc[i, 1]], "k--", alpha=0.5
+        )
+    event_loc = eikonal2d.event_loc.weight.detach().numpy()
+    ax[0, 0].plot(event_loc[:, 0], event_loc[:, 1], "x", label="Inverted Events")
+    for i in range(len(event_loc)):
+        ax[0, 0].plot(
+            [events["x_km"].iloc[i], event_loc[i, 0]], [events["y_km"].iloc[i], event_loc[i, 1]], "r--", alpha=0.5
+        )
+    ax[0, 0].set_xlabel("x (km)")
+    ax[0, 0].set_ylabel("y (km)")
+    ax[0, 0].legend()
+    ax[0, 0].set_title("Station and Event Locations")
+    plt.savefig(f"{data_path}/inverted_station_event_2d.png")
