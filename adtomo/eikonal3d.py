@@ -94,6 +94,20 @@ class Eikonal3DFunction(torch.autograd.Function):
         return grad_u0, grad_f, None
 
 
+class Clamp(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, min, max):
+        return input.clamp(min=min, max=max)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output, None, None
+
+
+def clamp(input, min, max):
+    return Clamp.apply(input, min, max)
+
+
 class Eikonal3D(torch.nn.Module):
     def __init__(
         self,
@@ -179,9 +193,12 @@ class Eikonal3D(torch.nn.Module):
         ix1 = ix0 + 1
         iy1 = iy0 + 1
         iz1 = iz0 + 1
-        x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        z = (torch.clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
+        # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
+        # y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
+        # z = (torch.clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
+        x = (clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
+        y = (clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
+        z = (clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
 
         u0 = torch.ones([self.nx, self.ny, self.nz], dtype=self.dtype) * 1000.0
         u0[ix0, iy0, iz0] = torch.sqrt((x - ix0) ** 2 + (y - iy0) ** 2 + (z - iz0) ** 2) * self.h / v[ix0, iy0, iz0]

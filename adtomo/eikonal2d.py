@@ -54,6 +54,20 @@ class Eikonal2DFunction(torch.autograd.Function):
         return grad_f, None, None, None
 
 
+class Clamp(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, min, max):
+        return input.clamp(min=min, max=max)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output, None, None
+
+
+def clamp(input, min, max):
+    return Clamp.apply(input, min, max)
+
+
 class Eikonal2D(torch.nn.Module):
     def __init__(
         self,
@@ -104,8 +118,10 @@ class Eikonal2D(torch.nn.Module):
         iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, ny - 2).long()
         ix1 = ix0 + 1
         iy1 = iy0 + 1
-        x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
+        # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
+        # y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
+        x = (clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
+        y = (clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
 
         ## https://en.wikipedia.org/wiki/Bilinear_interpolation
 
@@ -180,7 +196,7 @@ if __name__ == "__main__":
         os.makedirs(data_path, exist_ok=True)
     nx = 10
     ny = 10
-    h = 3.0
+    h = 1.0
     eikonal_config = {"nx": nx, "ny": ny, "h": h}
     with open(f"{data_path}/config.json", "w") as f:
         json.dump(eikonal_config, f)
@@ -298,8 +314,8 @@ if __name__ == "__main__":
     vp = torch.ones((nx, ny), dtype=torch.float64) * 6.0
     vs = vp / 1.73
 
-    event_loc = events[["x_km", "y_km"]].values + np.random.randn(num_event, 2) * 3
-    # event_loc = events[["x_km", "y_km"]].values * 0.0 + stations[["x_km", "y_km"]].values.mean(axis=0)
+    # event_loc = events[["x_km", "y_km"]].values + np.random.randn(num_event, 2) * 10
+    event_loc = events[["x_km", "y_km"]].values * 0.0 + stations[["x_km", "y_km"]].values.mean(axis=0)
 
     eikonal2d = Eikonal2D(
         num_event,
