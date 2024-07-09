@@ -262,6 +262,7 @@ if __name__ == "__main__":
     # %%
     import json
     import os
+    from datetime import datetime, timedelta
 
     ######################################## Create Synthetic Data #########################################
     np.random.seed(0)
@@ -291,19 +292,25 @@ if __name__ == "__main__":
     stations["station_index"] = stations.index
     stations.to_csv(f"{data_path}/stations.csv", index=False)
     events = []
+    reference_time = pd.to_datetime("2021-01-01T00:00:00.000")
     for i in range(num_event):
         x = np.random.uniform(xgrid[0], xgrid[-1])
         y = np.random.uniform(ygrid[0], ygrid[-1])
         z = np.random.uniform(zgrid[0], zgrid[-1])
         t = i * 5
-        events.append({"event_id": i, "event_time": t, "x_km": x, "y_km": y, "z_km": z})
+        # events.append({"event_id": i, "event_time": t, "x_km": x, "y_km": y, "z_km": z})
+        events.append(
+            {"event_id": i, "event_time": reference_time + pd.Timedelta(seconds=t), "x_km": x, "y_km": y, "z_km": z}
+        )
     events = pd.DataFrame(events)
     events["event_index"] = events.index
+    events["event_time"] = events["event_time"].apply(lambda x: x.isoformat(timespec="milliseconds"))
     events.to_csv(f"{data_path}/events.csv", index=False)
     vpvs_ratio = 1.73
     vp = torch.ones((nx, ny, nz), dtype=torch.float64) * 6.0
     vs = vp / vpvs_ratio
 
+    ### add anomaly
     vp[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3), :] *= 1.1
     vs[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3), :] *= 1.1
 
@@ -333,7 +340,8 @@ if __name__ == "__main__":
                         "event_id": event["event_id"],
                         "station_id": station["station_id"],
                         "phase_type": "P",
-                        "phase_time": event["event_time"] + tt,
+                        # "phase_time": event["event_time"] + tt,
+                        "phase_time": pd.to_datetime(event["event_time"]) + pd.Timedelta(seconds=tt),
                         "travel_time": tt,
                     }
                 )
@@ -353,12 +361,14 @@ if __name__ == "__main__":
                         "event_id": event["event_id"],
                         "station_id": station["station_id"],
                         "phase_type": "S",
-                        "phase_time": event["event_time"] + tt,
+                        # "phase_time": event["event_time"] + tt,
+                        "phase_time": pd.to_datetime(event["event_time"]) + pd.Timedelta(seconds=tt),
                         "travel_time": tt,
                     }
                 )
     picks = pd.DataFrame(picks)
     # use picks,  stations.index, events.index to set station_index and
+    picks["phase_time"] = picks["phase_time"].apply(lambda x: x.isoformat(timespec="milliseconds"))
     picks["event_index"] = picks["event_id"].map(events.set_index("event_id")["event_index"])
     picks["station_index"] = picks["station_id"].map(stations.set_index("station_id")["station_index"])
     picks.to_csv(f"{data_path}/picks.csv", index=False)
@@ -422,6 +432,18 @@ if __name__ == "__main__":
     events = pd.read_csv(f"{data_path}/events.csv")
     stations = pd.read_csv(f"{data_path}/stations.csv")
     picks = pd.read_csv(f"{data_path}/picks.csv")
+    picks = picks.merge(events[["event_index", "event_time"]], on="event_index")
+
+    #### make the time values relative to event time in seconds
+    picks["phase_time_origin"] = picks["phase_time"].copy()
+    picks["phase_time"] = (
+        pd.to_datetime(picks["phase_time"]) - pd.to_datetime(picks["event_time"])
+    ).dt.total_seconds()  # relative to event time (arrival time)
+    picks.drop(columns=["event_time"], inplace=True)
+    events["event_time_origin"] = events["event_time"].copy()
+    events["event_time"] = np.zeros(len(events))  # relative to event time
+    ####
+
     with open(f"{data_path}/config.json", "r") as f:
         eikonal_config = json.load(f)
     events = events.sort_values("event_index").set_index("event_index")
@@ -436,12 +458,15 @@ if __name__ == "__main__":
     vp = torch.ones((nx, ny, nz), dtype=torch.float64) * 6.0
     vs = vp / 1.73
 
+    ## initial event location
+    event_loc = events[["x_km", "y_km", "z_km"]].values
+
     eikonal3d = Eikonal3D(
         num_event,
         num_station,
         stations[["x_km", "y_km", "z_km"]].values,
         stations[["dt_s"]].values,
-        events[["x_km", "y_km", "z_km"]].values,
+        event_loc,
         events[["event_time"]].values,
         vp,
         vs,
