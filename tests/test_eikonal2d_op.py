@@ -40,15 +40,17 @@ if __name__ == "__main__":
 
     # Create initial speed function (f)
     f_ = torch.ones((m, n), dtype=torch.float64)
-    f_[m // 3 : 2 * m // 3, n // 3 : 2 * n // 3] /= 5.0
+    # f_[m // 3 : 2 * m // 3, n // 3 : 2 * n // 3] /= 5.0
 
     f = torch.nn.Parameter(f_, requires_grad=True)
 
     # Set a point source at the center
-    ix, jx = 0, 0
+    ix, jx = (0, 0)
+    # ix, jx = (0.5, 0.5)
+    # ix, jx = (1.0, 1.0)
 
     # Define the grid spacing
-    h = 1.0
+    h = 0.5
 
     # Create the Eikonal solver
     eikonal_solver = Eikonal2D(h, ix, jx)
@@ -62,7 +64,11 @@ if __name__ == "__main__":
 
     # Compute some loss (e.g., mean of u)
     # loss = u.mean()
-    loss = u[m - 1, n - 1]
+    # loss = u[m - 1, n - 1]
+    loss = u[0, n - 1]
+    # loss = u.mean()
+    # loss = u[0, 1]
+    # loss = u[1, 1]
 
     # Backward pass
     loss.backward()
@@ -76,11 +82,11 @@ if __name__ == "__main__":
     im = ax[0].imshow(f.detach().numpy(), cmap="viridis")
     fig.colorbar(im, ax=ax[0])
     ax[0].set_title("Speed function f")
-    im = ax[1].imshow(u.detach().numpy(), cmap="viridis")
+    im = ax[1].imshow(u.detach().numpy() / h, cmap="viridis")
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Solution u")
     ax[1].axis("off")
-    im = ax[2].imshow(f.grad.numpy(), cmap="viridis")
+    im = ax[2].imshow(f.grad.numpy() / h, cmap="viridis")
     fig.colorbar(im, ax=ax[2])
     ax[2].set_title("Gradient of f")
     ax[2].axis("off")

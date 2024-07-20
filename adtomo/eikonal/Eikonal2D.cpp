@@ -26,14 +26,12 @@ double solution(double a, double b, double f, double h)
 
 void sweep(double *u,
            const std::vector<int> &I, const std::vector<int> &J,
-           const double *f, int m, int n, double h, int ix, int jx)
+           const double *f, int m, int n, double h)
 {
   for (int i : I)
   {
     for (int j : J)
     {
-      if (i == ix && j == jx)
-        continue;
       double a, b;
       if (i == 0)
       {
@@ -65,17 +63,28 @@ void sweep(double *u,
   }
 }
 
-void forward(double *u, const double *f, int m, int n, double h, int ix, int jx)
+// void forward(double *u, const double *f, int m, int n, double h, int ix, int jx)
+void forward(double *u, const double *f, int m, int n, double h, double x, double y)
 {
+  int ix0 = std::max(0, std::min((int)floor(x / h), m - 1));
+  int jx0 = std::max(0, std::min((int)floor(y / h), n - 1));
+  int ix1 = ix0 + 1;
+  int jx1 = jx0 + 1;
   for (int i = 0; i < m + 1; i++)
   {
     for (int j = 0; j < n + 1; j++)
     {
       u[j * (m + 1) + i] = 100000.0;
-      if (i == ix && j == jx)
-        u[j * (m + 1) + i] = 0.0;
+      // if (i == ix && j == jx)
+      //   u[j * (m + 1) + i] = 0.0;
     }
   }
+  // interpolate
+  u[jx0 * (m + 1) + ix0] = sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx0 * h) * (y - jx0 * h)) * f[jx0 * (m + 1) + ix0];
+  u[jx0 * (m + 1) + ix1] = sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx0 * h) * (y - jx0 * h)) * f[jx0 * (m + 1) + ix1];
+  u[jx1 * (m + 1) + ix0] = sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx1 * h) * (y - jx1 * h)) * f[jx1 * (m + 1) + ix0];
+  u[jx1 * (m + 1) + ix1] = sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx1 * h) * (y - jx1 * h)) * f[jx1 * (m + 1) + ix1];
+  
   std::vector<int> I, J, iI, iJ;
   for (int i = 0; i < m + 1; i++)
   {
@@ -92,10 +101,14 @@ void forward(double *u, const double *f, int m, int n, double h, int ix, int jx)
   bool converged = false;
   for (int i = 0; i < 100; i++)
   {
-    sweep(u, I, J, f, m, n, h, ix, jx);
-    sweep(u, iI, J, f, m, n, h, ix, jx);
-    sweep(u, iI, iJ, f, m, n, h, ix, jx);
-    sweep(u, I, iJ, f, m, n, h, ix, jx);
+    // sweep(u, I, J, f, m, n, h, ix, jx);
+    // sweep(u, iI, J, f, m, n, h, ix, jx);
+    // sweep(u, iI, iJ, f, m, n, h, ix, jx);
+    // sweep(u, I, iJ, f, m, n, h, ix, jx);
+    sweep(u, I, J, f, m, n, h);
+    sweep(u, iI, J, f, m, n, h);
+    sweep(u, iI, iJ, f, m, n, h);
+    sweep(u, I, iJ, f, m, n, h);
     uvec = Eigen::Map<const Eigen::VectorXd>(u, (m + 1) * (n + 1));
     double err = (uvec - uvec_old).norm() / uvec_old.norm();
     // printf("ERROR AT ITER %d: %g\n", i, err);
@@ -113,18 +126,32 @@ void forward(double *u, const double *f, int m, int n, double h, int ix, int jx)
   }
 }
 
+// void backward(
+//     double *grad_f,
+//     const double *grad_u,
+//     const double *u, const double *f, int m, int n, double h, int ix, int jx)
 void backward(
     double *grad_f,
     const double *grad_u,
-    const double *u, const double *f, int m, int n, double h, int ix, int jx)
+    const double *u, const double *f, int m, int n, double h, double x, double y)
 {
+  int ix0 = std::max(0, std::min((int)floor(x / h), m - 1));
+  int jx0 = std::max(0, std::min((int)floor(y / h), n - 1));
+  int ix1 = ix0 + 1;
+  int jx1 = jx0 + 1;
+  
 
   Eigen::VectorXd dFdf((m + 1) * (n + 1));
   for (int i = 0; i < (m + 1) * (n + 1); i++)
   {
     dFdf[i] = -2 * f[i] * h * h;
   }
-  dFdf[jx * (m + 1) + ix] = 0.0;
+  // dFdf[jx * (m + 1) + ix] = 0.0;
+  dFdf[jx0 * (m + 1) + ix0] = -sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx0 * h) * (y - jx0 * h));
+  dFdf[jx0 * (m + 1) + ix1] = -sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx0 * h) * (y - jx0 * h));
+  dFdf[jx1 * (m + 1) + ix0] = -sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx1 * h) * (y - jx1 * h));
+  dFdf[jx1 * (m + 1) + ix1] = -sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx1 * h) * (y - jx1 * h));
+
   std::vector<T> triplets;
 
   for (int j = 0; j < n + 1; j++)
@@ -132,8 +159,12 @@ void backward(
     for (int i = 0; i < m + 1; i++)
     {
       int idx = j * (m + 1) + i;
-      if (i == ix && j == jx)
-      {
+      // if (i == ix && j == jx)
+      // {
+      //   triplets.push_back(T(idx, idx, 1.0));
+      //   continue;
+      // }
+      if ((i == ix0 && j == jx0) || (i == ix1 && j == jx0) || (i == ix0 && j == jx1) || (i == ix1 && j == jx1)) {
         triplets.push_back(T(idx, idx, 1.0));
         continue;
       }
@@ -233,24 +264,28 @@ void backward(
 }
 
 // PyTorch extension interface
-torch::Tensor eikonal_forward(torch::Tensor f, double h, int ix, int jx) {
+// torch::Tensor eikonal_forward(torch::Tensor f, double h, int ix, int jx) {
+torch::Tensor eikonal_forward(torch::Tensor f, double h, double x, double y) {
     auto m = f.size(0) - 1;
     auto n = f.size(1) - 1;
     
     auto u = torch::zeros_like(f);
     
-    forward(u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, ix, jx);
+    // forward(u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, ix, jx);
+    forward(u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, x, y);
     
     return u;
 }
 
-torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor f, double h, int ix, int jx) {
+// torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor f, double h, int ix, int jx) {
+torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor f, double h, double x, double y) {
     auto m = f.size(0) - 1;
     auto n = f.size(1) - 1;
     
     auto grad_f = torch::zeros_like(f);
     
-    backward(grad_f.data_ptr<double>(), grad_u.data_ptr<double>(), u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, ix, jx);
+    // backward(grad_f.data_ptr<double>(), grad_u.data_ptr<double>(), u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, ix, jx);
+    backward(grad_f.data_ptr<double>(), grad_u.data_ptr<double>(), u.data_ptr<double>(), f.data_ptr<double>(), m, n, h, x, y);
     
     return grad_f;
 }
