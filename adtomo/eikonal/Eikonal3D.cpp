@@ -26,25 +26,13 @@ typedef Eigen::Triplet<double> T;
 double calculate_unique_solution(double a1_, double a2_,
                                  double a3_, double f, double h)
 {
-    double a1 = a1_, a2 = a2_, a3 = a3_, temp;
+    double a1 = a1_, a2 = a2_, a3 = a3_;
     if (a1 > a2)
-    {
-        temp = a1;
-        a1 = a2;
-        a2 = temp;
-    }
+        std::swap(a1, a2);
     if (a1 > a3)
-    {
-        temp = a1;
-        a1 = a3;
-        a3 = temp;
-    }
+        std::swap(a1, a3);
     if (a2 > a3)
-    {
-        temp = a2;
-        a2 = a3;
-        a3 = temp;
-    }
+        std::swap(a2, a3);
 
     double x = a1 + f * h;
     if (x <= a2)
