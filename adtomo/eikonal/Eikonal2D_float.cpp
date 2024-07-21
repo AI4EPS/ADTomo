@@ -30,7 +30,7 @@ double solution(double a, double b, double f, double h)
 // {
 void sweep(double *u,
            const std::vector<int> &I, const std::vector<int> &J,
-           const double *f, int m, int n, double h)
+           const double *f, int m, int n, double h, int ix0, int jx0, int ix1, int jx1)
 {
   for (int i : I)
   {
@@ -38,6 +38,8 @@ void sweep(double *u,
     {
       // if (i == ix && j == jx)
       //   continue;
+      if ((i == ix0 && j == jx0) || (i == ix1 && j == jx0) || (i == ix0 && j == jx1) || (i == ix1 && j == jx1))
+        continue;
       double a, b;
       if (i == 0)
       {
@@ -112,10 +114,10 @@ void forward(double *u, const double *f, int m, int n, double h, double x, doubl
     // sweep(u, iI, J, f, m, n, h, ix, jx);
     // sweep(u, iI, iJ, f, m, n, h, ix, jx);
     // sweep(u, I, iJ, f, m, n, h, ix, jx);
-    sweep(u, I, J, f, m, n, h);
-    sweep(u, iI, J, f, m, n, h);
-    sweep(u, iI, iJ, f, m, n, h);
-    sweep(u, I, iJ, f, m, n, h);
+    sweep(u, I, J, f, m, n, h, ix0, jx0, ix1, jx1);
+    sweep(u, iI, J, f, m, n, h, ix0, jx0, ix1, jx1);
+    sweep(u, iI, iJ, f, m, n, h, ix0, jx0, ix1, jx1);
+    sweep(u, I, iJ, f, m, n, h, ix0, jx0, ix1, jx1);
     uvec = Eigen::Map<const Eigen::VectorXd>(u, (m + 1) * (n + 1));
     double err = (uvec - uvec_old).norm() / uvec_old.norm();
     if (err < 1e-8)

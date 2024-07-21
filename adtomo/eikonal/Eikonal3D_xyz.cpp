@@ -47,7 +47,7 @@ double calculate_unique_solution(double a1_, double a2_,
     return x;
 }
 
-void sweeping_over_I_J_K(double *u, const double *f, int m, int n, int l, double h, int dirI, int dirJ, int dirK)
+void sweeping_over_I_J_K(double *u, const double *f, int m, int n, int l, double h, int ix0, int jx0, int kx0, int ix1, int jx1, int kx1, int dirI, int dirJ, int dirK)
 {
 
     auto I = std::make_tuple(dirI == 1 ? 0 : m - 1, dirI == 1 ? m : -1, dirI);
@@ -58,6 +58,15 @@ void sweeping_over_I_J_K(double *u, const double *f, int m, int n, int l, double
         for (int j = std::get<0>(J); j != std::get<1>(J); j += std::get<2>(J))
             for (int k = std::get<0>(K); k != std::get<1>(K); k += std::get<2>(K))
             {
+                if (i == ix0 && j == jx0 && k == kx0) continue;
+                if (i == ix0 && j == jx0 && k == kx1) continue;
+                if (i == ix0 && j == jx1 && k == kx0) continue;
+                if (i == ix0 && j == jx1 && k == kx1) continue;
+                if (i == ix1 && j == jx0 && k == kx0) continue;
+                if (i == ix1 && j == jx0 && k == kx1) continue;
+                if (i == ix1 && j == jx1 && k == kx0) continue;
+                if (i == ix1 && j == jx1 && k == kx1) continue;
+        
                 double uxmin = i == 0 ? u(i + 1, j, k) : (i == m - 1 ? u(i - 1, j, k) : std::min(u(i + 1, j, k), u(i - 1, j, k)));
                 double uymin = j == 0 ? u(i, j + 1, k) : (j == n - 1 ? u(i, j - 1, k) : std::min(u(i, j + 1, k), u(i, j - 1, k)));
                 double uzmin = k == 0 ? u(i, j, k + 1) : (k == l - 1 ? u(i, j, k - 1) : std::min(u(i, j, k + 1), u(i, j, k - 1)));
@@ -66,16 +75,16 @@ void sweeping_over_I_J_K(double *u, const double *f, int m, int n, int l, double
             }
 }
 
-void sweeping(double *u, const double *f, int m, int n, int l, double h)
+void sweeping(double *u, const double *f, int m, int n, int l, double h, int ix0, int jx0, int kx0, int ix1, int jx1, int kx1)
 {
-    sweeping_over_I_J_K(u, f, m, n, l, h, 1, 1, 1);
-    sweeping_over_I_J_K(u, f, m, n, l, h, -1, 1, 1);
-    sweeping_over_I_J_K(u, f, m, n, l, h, -1, -1, 1);
-    sweeping_over_I_J_K(u, f, m, n, l, h, 1, -1, 1);
-    sweeping_over_I_J_K(u, f, m, n, l, h, 1, -1, -1);
-    sweeping_over_I_J_K(u, f, m, n, l, h, 1, 1, -1);
-    sweeping_over_I_J_K(u, f, m, n, l, h, -1, 1, -1);
-    sweeping_over_I_J_K(u, f, m, n, l, h, -1, -1, -1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, 1, 1, 1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, -1, 1, 1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, -1, -1, 1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, 1, -1, 1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, 1, -1, -1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, 1, 1, -1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, -1, 1, -1);
+    sweeping_over_I_J_K(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1, -1, -1, -1);
 }
 
 void forward(double *u, const double *f, double h,
@@ -104,7 +113,7 @@ void forward(double *u, const double *f, double h,
     for (int i = 0; i < 20; i++)
     {
         memcpy(u_old, u, sizeof(double) * m * n * l);
-        sweeping(u, f, m, n, l, h);
+        sweeping(u, f, m, n, l, h, ix0, jx0, kx0, ix1, jx1, kx1);
         double err = 0.0;
 
         for (int j = 0; j < m * n * l; j++)
