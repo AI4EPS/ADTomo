@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <fstream>
 #include <set>
-// #include <iostream>
 
 // #include "../eigen/Eigen/Core"
 // #include "../eigen/Eigen/SparseCore"
@@ -79,10 +78,9 @@ void sweeping(double *u, const double *f, int m, int n, int l, double h)
     sweeping_over_I_J_K(u, f, m, n, l, h, -1, -1, -1);
 }
 
-void forward(double *u, const double *u0, const double *f, double h,
+void forward(double *u, const double *f, double h,
              int m, int n, int l, double x, double y, double z, double tol = 1e-8)
 {
-    // memcpy(u, u0, sizeof(double) * m * n * l);
     int ix0 = std::max(0, std::min((int)floor(x), m - 1));
     int jx0 = std::max(0, std::min((int)floor(y), n - 1));
     int kx0 = std::max(0, std::min((int)floor(z), l - 1));
@@ -121,9 +119,9 @@ void forward(double *u, const double *u0, const double *f, double h,
 }
 
 void backward(
-    double *grad_u0, double *grad_f,
+    double *grad_f,
     const double *grad_u,
-    const double *u, const double *u0, const double *f, double h,
+    const double *u, const double *f, double h,
     int m, int n, int l, double x, double y, double z)
 {
 
@@ -136,16 +134,6 @@ void backward(
 
     Eigen::VectorXd g(m * n * l);
     memcpy(g.data(), grad_u, sizeof(double) * m * n * l);
-
-    // calculate gradients for \partial L/\partial u0
-    for (int i = 0; i < m * n * l; i++)
-    {
-        // if (fabs(u[i] - u0[i])<1e-6) grad_u0[i] = g[i];
-        if (u[i] == u0[i])
-            grad_u0[i] = g[i];
-        else
-            grad_u0[i] = 0.0;
-    }
 
     // calculate gradients for \partial L/\partial f
     Eigen::VectorXd rhs(m * n * l);
@@ -174,13 +162,6 @@ void backward(
 
                 int this_id = get_id(i, j, k);
 
-                // if (u[this_id] == u0[this_id])
-                // {
-                //     // std::cout << "(1) zero id: " << this_id << std::endl;
-                //     zero_id.insert(this_id);
-                //     g[this_id] = 0.0;
-                //     continue;
-                // }
                 if ((i == ix0 && j == jx0 && k == kx0) || (i == ix0 && j == jx0 && k == kx1) || (i == ix0 && j == jx1 && k == kx0) || (i == ix0 && j == jx1 && k == kx1) ||
                     (i == ix1 && j == jx0 && k == kx0) || (i == ix1 && j == jx0 && k == kx1) || (i == ix1 && j == jx1 && k == kx0) || (i == ix1 && j == jx1 && k == kx1))
                 {
@@ -277,42 +258,39 @@ void backward(
 }
 
 // PyTorch extension interface
-torch::Tensor eikonal_forward(torch::Tensor u0, torch::Tensor f, double h, double x, double y, double z)
+torch::Tensor eikonal_forward(torch::Tensor f, double h, double x, double y, double z)
 {
-    TORCH_CHECK(u0.dim() == 3, "u0 must be a 3D tensor");
     TORCH_CHECK(f.dim() == 3, "f must be a 3D tensor");
-    TORCH_CHECK(u0.sizes() == f.sizes(), "u0 and f must have the same size");
-    TORCH_CHECK(u0.is_contiguous() && f.is_contiguous(), "Input tensors must be contiguous");
+    TORCH_CHECK(f.is_contiguous(), "Input tensors must be contiguous");
 
-    int m = u0.size(0);
-    int n = u0.size(1);
-    int l = u0.size(2);
+    int m = f.size(0);
+    int n = f.size(1);
+    int l = f.size(2);
 
-    auto u = torch::zeros_like(u0);
+    auto u = torch::zeros_like(f);
 
-    forward(u.data_ptr<double>(), u0.data_ptr<double>(), f.data_ptr<double>(), h, m, n, l, x, y, z);
+    forward(u.data_ptr<double>(), f.data_ptr<double>(), h, m, n, l, x, y, z);
 
     return u;
 }
 
-std::vector<torch::Tensor> eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor u0, torch::Tensor f, double h, double x, double y, double z)
+torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor f, double h, double x, double y, double z)
 {
-    TORCH_CHECK(grad_u.dim() == 3 && u.dim() == 3 && u0.dim() == 3 && f.dim() == 3, "All tensors must be 3D");
-    TORCH_CHECK(grad_u.sizes() == u.sizes() && u.sizes() == u0.sizes() && u0.sizes() == f.sizes(), "All tensors must have the same size");
-    TORCH_CHECK(grad_u.is_contiguous() && u.is_contiguous() && u0.is_contiguous() && f.is_contiguous(), "All tensors must be contiguous");
+    TORCH_CHECK(grad_u.dim() == 3 && u.dim() == 3 && f.dim() == 3, "All tensors must be 3D");
+    TORCH_CHECK(grad_u.sizes() == u.sizes(), "All tensors must have the same size");
+    TORCH_CHECK(grad_u.is_contiguous() && u.is_contiguous() && f.is_contiguous(), "All tensors must be contiguous");
 
     int m = u.size(0);
     int n = u.size(1);
     int l = u.size(2);
 
-    auto grad_u0 = torch::zeros_like(u0);
     auto grad_f = torch::zeros_like(f);
 
-    backward(grad_u0.data_ptr<double>(), grad_f.data_ptr<double>(),
-             grad_u.data_ptr<double>(), u.data_ptr<double>(), u0.data_ptr<double>(), f.data_ptr<double>(),
+    backward(grad_f.data_ptr<double>(),
+             grad_u.data_ptr<double>(), u.data_ptr<double>(), f.data_ptr<double>(),
              h, m, n, l, x, y, z);
 
-    return {grad_u0, grad_f};
+    return grad_f;
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

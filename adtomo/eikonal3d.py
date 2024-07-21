@@ -50,40 +50,11 @@ def interp3d(time_table, x, y, z, xgrid, ygrid, zgrid, h):
     return t
 
 
-def set_u0(v, x, y, z, xgrid, ygrid, zgrid, h):
-    nx = len(xgrid)
-    ny = len(ygrid)
-    nz = len(zgrid)
-    assert v.shape == (nx, ny, nz)
-
-    ix0 = np.floor((x - xgrid[0]) / h).clip(0, nx - 2).astype(int)
-    iy0 = np.floor((y - ygrid[0]) / h).clip(0, ny - 2).astype(int)
-    iz0 = np.floor((z - zgrid[0]) / h).clip(0, nz - 2).astype(int)
-    ix1 = ix0 + 1
-    iy1 = iy0 + 1
-    iz1 = iz0 + 1
-    x = (np.clip(x, xgrid[0], xgrid[-1]) - xgrid[0]) / h
-    y = (np.clip(y, ygrid[0], ygrid[-1]) - ygrid[0]) / h
-    z = (np.clip(z, zgrid[0], zgrid[-1]) - zgrid[0]) / h
-
-    u0 = np.ones([nx, ny, nz]) * 1000.0
-    u0[ix0, iy0, iz0] = np.sqrt((x - ix0) ** 2 + (y - iy0) ** 2 + (z - iz0) ** 2) * h / v[ix0, iy0, iz0]
-    u0[ix1, iy0, iz0] = np.sqrt((x - ix1) ** 2 + (y - iy0) ** 2 + (z - iz0) ** 2) * h / v[ix1, iy0, iz0]
-    u0[ix0, iy1, iz0] = np.sqrt((x - ix0) ** 2 + (y - iy1) ** 2 + (z - iz0) ** 2) * h / v[ix0, iy1, iz0]
-    u0[ix1, iy1, iz0] = np.sqrt((x - ix1) ** 2 + (y - iy1) ** 2 + (z - iz0) ** 2) * h / v[ix1, iy1, iz0]
-    u0[ix0, iy0, iz1] = np.sqrt((x - ix0) ** 2 + (y - iy0) ** 2 + (z - iz1) ** 2) * h / v[ix0, iy0, iz1]
-    u0[ix1, iy0, iz1] = np.sqrt((x - ix1) ** 2 + (y - iy0) ** 2 + (z - iz1) ** 2) * h / v[ix1, iy0, iz1]
-    u0[ix0, iy1, iz1] = np.sqrt((x - ix0) ** 2 + (y - iy1) ** 2 + (z - iz1) ** 2) * h / v[ix0, iy1, iz1]
-    u0[ix1, iy1, iz1] = np.sqrt((x - ix1) ** 2 + (y - iy1) ** 2 + (z - iz1) ** 2) * h / v[ix1, iy1, iz1]
-
-    return u0
-
-
 class Eikonal3DFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, u0, f, h, x, y, z):
-        u = eikonal3d_op.forward(u0, f, h, x, y, z)
-        ctx.save_for_backward(u, u0, f)
+    def forward(ctx, f, h, x, y, z):
+        u = eikonal3d_op.forward(f, h, x, y, z)
+        ctx.save_for_backward(u, f)
         ctx.h = h
         ctx.x = x
         ctx.y = y
@@ -92,9 +63,9 @@ class Eikonal3DFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        u, u0, f = ctx.saved_tensors
-        grad_u0, grad_f = eikonal3d_op.backward(grad_output, u, u0, f, ctx.h, ctx.x, ctx.y, ctx.z)
-        return grad_u0, grad_f, None, None, None, None
+        u, f = ctx.saved_tensors
+        grad_f = eikonal3d_op.backward(grad_output, u, f, ctx.h, ctx.x, ctx.y, ctx.z)
+        return grad_f, None, None, None, None
 
 
 class Clamp(torch.autograd.Function):
@@ -191,33 +162,6 @@ class Eikonal3D(torch.nn.Module):
 
         return t
 
-    def set_u0(self, v, x, y, z):
-
-        ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, self.nx - 2).long()
-        iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, self.ny - 2).long()
-        iz0 = torch.floor((z - self.zgrid[0]) / self.h).clamp(0, self.nz - 2).long()
-        ix1 = ix0 + 1
-        iy1 = iy0 + 1
-        iz1 = iz0 + 1
-        # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        # y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        # z = (torch.clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
-        x = (clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        y = (clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        z = (clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
-
-        u0 = torch.ones([self.nx, self.ny, self.nz], dtype=self.dtype) * 1000.0
-        u0[ix0, iy0, iz0] = torch.sqrt((x - ix0) ** 2 + (y - iy0) ** 2 + (z - iz0) ** 2) * self.h / v[ix0, iy0, iz0]
-        u0[ix1, iy0, iz0] = torch.sqrt((x - ix1) ** 2 + (y - iy0) ** 2 + (z - iz0) ** 2) * self.h / v[ix1, iy0, iz0]
-        u0[ix0, iy1, iz0] = torch.sqrt((x - ix0) ** 2 + (y - iy1) ** 2 + (z - iz0) ** 2) * self.h / v[ix0, iy1, iz0]
-        u0[ix1, iy1, iz0] = torch.sqrt((x - ix1) ** 2 + (y - iy1) ** 2 + (z - iz0) ** 2) * self.h / v[ix1, iy1, iz0]
-        u0[ix0, iy0, iz1] = torch.sqrt((x - ix0) ** 2 + (y - iy0) ** 2 + (z - iz1) ** 2) * self.h / v[ix0, iy0, iz1]
-        u0[ix1, iy0, iz1] = torch.sqrt((x - ix1) ** 2 + (y - iy0) ** 2 + (z - iz1) ** 2) * self.h / v[ix1, iy0, iz1]
-        u0[ix0, iy1, iz1] = torch.sqrt((x - ix0) ** 2 + (y - iy1) ** 2 + (z - iz1) ** 2) * self.h / v[ix0, iy1, iz1]
-        u0[ix1, iy1, iz1] = torch.sqrt((x - ix1) ** 2 + (y - iy1) ** 2 + (z - iz1) ** 2) * self.h / v[ix1, iy1, iz1]
-
-        return u0
-
     def forward(self, picks):
 
         # %%
@@ -233,10 +177,7 @@ class Eikonal3D(torch.nn.Module):
             event_time = self.event_time(event_index_)
 
             if phase_type_ == "P":
-                # up0 = self.set_u0(self.vp, station_loc[0], station_loc[1], station_loc[2])
-                up0 = torch.ones((self.nx, self.ny, self.nz), dtype=self.dtype) * 1000.0
                 tp3d = Eikonal3DFunction.apply(
-                    up0,
                     1.0 / self.vp,
                     self.h,
                     station_loc[0] / self.h,
@@ -251,10 +192,7 @@ class Eikonal3D(torch.nn.Module):
                 loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
 
             elif phase_type_ == "S":
-                # us0 = self.set_u0(self.vs, station_loc[0], station_loc[1], station_loc[2])
-                us0 = torch.zeros((self.nx, self.ny, self.nz), dtype=self.dtype) * 1000.0
                 ts3d = Eikonal3DFunction.apply(
-                    us0,
                     1.0 / self.vs,
                     self.h,
                     station_loc[0] / self.h,
@@ -339,18 +277,8 @@ if __name__ == "__main__":
     picks = []
     for j, station in stations.iterrows():
         ix, iy = int(round(station["x_km"] / h)), int(round(station["y_km"] / h))
-        # up0 = set_u0(vp, station["x_km"], station["y_km"], station["z_km"], xgrid, ygrid, zgrid, h)
-        # us0 = set_u0(vs, station["x_km"], station["y_km"], station["z_km"], xgrid, ygrid, zgrid, h)
-        # up0 = torch.tensor(up0, dtype=torch.float64)
-        # us0 = torch.tensor(us0, dtype=torch.float64)
-        up0 = torch.ones((nx, ny, nz), dtype=torch.float64) * 1000.0
-        us0 = torch.zeros((nx, ny, nz), dtype=torch.float64) * 1000.0
-        tp3d = eikonal3d_op.forward(
-            up0, 1.0 / vp, h, station["x_km"] / h, station["y_km"] / h, station["z_km"] / h
-        ).numpy()
-        ts3d = eikonal3d_op.forward(
-            us0, 1.0 / vs, h, station["x_km"] / h, station["y_km"] / h, station["z_km"] / h
-        ).numpy()
+        tp3d = eikonal3d_op.forward(1.0 / vp, h, station["x_km"] / h, station["y_km"] / h, station["z_km"] / h).numpy()
+        ts3d = eikonal3d_op.forward(1.0 / vs, h, station["x_km"] / h, station["y_km"] / h, station["z_km"] / h).numpy()
         for i, event in events.iterrows():
             if np.random.rand() < 0.5:
                 tt = interp3d(
