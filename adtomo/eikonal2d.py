@@ -39,18 +39,18 @@ def interp2d(time_table, r, z, rgrid, zgrid, h):
 
 class Eikonal2DFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, f, h, ix, iy):
-        u = eikonal2d_op.forward(f, h, ix, iy)
+    def forward(ctx, f, h, x, y):
+        u = eikonal2d_op.forward(f, h, x, y)
         ctx.save_for_backward(u, f)
         ctx.h = h
-        ctx.ix = ix
-        ctx.iy = iy
+        ctx.x = x
+        ctx.y = y
         return u
 
     @staticmethod
     def backward(ctx, grad_output):
         u, f = ctx.saved_tensors
-        grad_f = eikonal2d_op.backward(grad_output, u, f, ctx.h, ctx.ix, ctx.iy)
+        grad_f = eikonal2d_op.backward(grad_output, u, f, ctx.h, ctx.x, ctx.y)
         return grad_f, None, None, None
 
 

@@ -81,17 +81,20 @@ def set_u0(v, x, y, z, xgrid, ygrid, zgrid, h):
 
 class Eikonal3DFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, u0, f, h):
-        u = eikonal3d_op.forward(u0, f, h)
+    def forward(ctx, u0, f, h, x, y, z):
+        u = eikonal3d_op.forward(u0, f, h, x, y, z)
         ctx.save_for_backward(u, u0, f)
         ctx.h = h
+        ctx.x = x
+        ctx.y = y
+        ctx.z = z
         return u
 
     @staticmethod
     def backward(ctx, grad_output):
         u, u0, f = ctx.saved_tensors
-        grad_u0, grad_f = eikonal3d_op.backward(grad_output, u, u0, f, ctx.h)
-        return grad_u0, grad_f, None
+        grad_u0, grad_f = eikonal3d_op.backward(grad_output, u, u0, f, ctx.h, ctx.x, ctx.y, ctx.z)
+        return grad_u0, grad_f, None, None, None, None
 
 
 class Clamp(torch.autograd.Function):
@@ -230,8 +233,16 @@ class Eikonal3D(torch.nn.Module):
             event_time = self.event_time(event_index_)
 
             if phase_type_ == "P":
-                up0 = self.set_u0(self.vp, station_loc[0], station_loc[1], station_loc[2])
-                tp3d = Eikonal3DFunction.apply(up0, 1.0 / self.vp, self.h)
+                # up0 = self.set_u0(self.vp, station_loc[0], station_loc[1], station_loc[2])
+                up0 = torch.ones((self.nx, self.ny, self.nz), dtype=self.dtype) * 1000.0
+                tp3d = Eikonal3DFunction.apply(
+                    up0,
+                    1.0 / self.vp,
+                    self.h,
+                    station_loc[0] / self.h,
+                    station_loc[1] / self.h,
+                    station_loc[2] / self.h,
+                )
                 tt = self.interp(tp3d, event_loc[:, 0], event_loc[:, 1], event_loc[:, 2]).squeeze()  # travel time
                 at = event_time.squeeze() + tt  # arrival time
                 # pred.append(tt.detach().numpy())
@@ -240,8 +251,16 @@ class Eikonal3D(torch.nn.Module):
                 loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
 
             elif phase_type_ == "S":
-                us0 = self.set_u0(self.vs, station_loc[0], station_loc[1], station_loc[2])
-                ts3d = Eikonal3DFunction.apply(us0, 1.0 / self.vs, self.h)
+                # us0 = self.set_u0(self.vs, station_loc[0], station_loc[1], station_loc[2])
+                us0 = torch.zeros((self.nx, self.ny, self.nz), dtype=self.dtype) * 1000.0
+                ts3d = Eikonal3DFunction.apply(
+                    us0,
+                    1.0 / self.vs,
+                    self.h,
+                    station_loc[0] / self.h,
+                    station_loc[1] / self.h,
+                    station_loc[2] / self.h,
+                )
                 tt = self.interp(ts3d, event_loc[:, 0], event_loc[:, 1], event_loc[:, 2]).squeeze()
                 at = event_time.squeeze() + tt
                 # pred.append(tt.detach().numpy())
@@ -320,12 +339,18 @@ if __name__ == "__main__":
     picks = []
     for j, station in stations.iterrows():
         ix, iy = int(round(station["x_km"] / h)), int(round(station["y_km"] / h))
-        up0 = set_u0(vp, station["x_km"], station["y_km"], station["z_km"], xgrid, ygrid, zgrid, h)
-        us0 = set_u0(vs, station["x_km"], station["y_km"], station["z_km"], xgrid, ygrid, zgrid, h)
-        up0 = torch.tensor(up0, dtype=torch.float64)
-        us0 = torch.tensor(us0, dtype=torch.float64)
-        tp3d = eikonal3d_op.forward(up0, 1.0 / vp, h).numpy()
-        ts3d = eikonal3d_op.forward(us0, 1.0 / vs, h).numpy()
+        # up0 = set_u0(vp, station["x_km"], station["y_km"], station["z_km"], xgrid, ygrid, zgrid, h)
+        # us0 = set_u0(vs, station["x_km"], station["y_km"], station["z_km"], xgrid, ygrid, zgrid, h)
+        # up0 = torch.tensor(up0, dtype=torch.float64)
+        # us0 = torch.tensor(us0, dtype=torch.float64)
+        up0 = torch.ones((nx, ny, nz), dtype=torch.float64) * 1000.0
+        us0 = torch.zeros((nx, ny, nz), dtype=torch.float64) * 1000.0
+        tp3d = eikonal3d_op.forward(
+            up0, 1.0 / vp, h, station["x_km"] / h, station["y_km"] / h, station["z_km"] / h
+        ).numpy()
+        ts3d = eikonal3d_op.forward(
+            us0, 1.0 / vs, h, station["x_km"] / h, station["y_km"] / h, station["z_km"] / h
+        ).numpy()
         for i, event in events.iterrows():
             if np.random.rand() < 0.5:
                 tt = interp3d(
@@ -416,6 +441,8 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(3, 1, squeeze=False, figsize=(10, 15))
     picks = picks.merge(stations, on="station_id")
     mapping_color = lambda x: f"C{int(x)}"
+    picks["phase_time"] = pd.to_datetime(picks["phase_time"])
+    events["event_time"] = pd.to_datetime(events["event_time"])
     ax[0, 0].scatter(picks["phase_time"], picks["x_km"], c=picks["event_index"].apply(mapping_color))
     ax[0, 0].scatter(events["event_time"], events["x_km"], c=events["event_index"].apply(mapping_color), marker="x")
     ax[0, 0].set_xlabel("Time (s)")
