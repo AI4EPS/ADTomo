@@ -56,7 +56,7 @@ if __name__ == "__main__":
 
     # Print the result
     print("Solution u:")
-    print(u[:, :, 0])
+    # print(u[:, :, 0])
 
     # Compute some loss (e.g., mean of u)
     # loss = u.mean()

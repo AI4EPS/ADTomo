@@ -5,9 +5,9 @@ import torch
 
 class Eikonal3DFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, u0, f, h, x, y, z):
-        u = eikonal3d_op.forward(u0, f, h, x, y, z)
-        ctx.save_for_backward(u, u0, f)
+    def forward(ctx, f, h, x, y, z):
+        u = eikonal3d_op.forward(f, h, x, y, z)
+        ctx.save_for_backward(u, f)
         ctx.x = x
         ctx.y = y
         ctx.z = z
@@ -16,9 +16,9 @@ class Eikonal3DFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        u, u0, f = ctx.saved_tensors
-        grad_u0, grad_f = eikonal3d_op.backward(grad_output, u, u0, f, ctx.h, ctx.x, ctx.y, ctx.z)
-        return grad_u0, grad_f, None, None, None, None
+        u, f = ctx.saved_tensors
+        grad_f = eikonal3d_op.backward(grad_output, u, f, ctx.h, ctx.x, ctx.y, ctx.z)
+        return grad_f, None, None, None, None
 
 
 class Eikonal3D(torch.nn.Module):
@@ -29,8 +29,8 @@ class Eikonal3D(torch.nn.Module):
         self.y = y
         self.z = z
 
-    def forward(self, u0, f):
-        return Eikonal3DFunction.apply(u0, f, self.h, float(self.x), float(self.y), float(self.z))
+    def forward(self, f):
+        return Eikonal3DFunction.apply(f, self.h, float(self.x), float(self.y), float(self.z))
 
 
 if __name__ == "__main__":
@@ -41,7 +41,6 @@ if __name__ == "__main__":
     m, n, l = 20, 15, 10
 
     # Create initial conditions (u0) and speed function (f)
-    u0_ = torch.ones((m, n, l), dtype=torch.float64) * 1000.0
     f_ = torch.ones((m, n, l), dtype=torch.float64)
 
     x, y, z = 1, 1, 0
@@ -49,7 +48,6 @@ if __name__ == "__main__":
     # u0_[1, 1, 0] = 0.0
     # f_[m // 3 : 2 * m // 3, n // 3 : 2 * n // 3, 0] /= 5.0
 
-    u0 = torch.nn.Parameter(u0_, requires_grad=True)
     f = torch.nn.Parameter(f_, requires_grad=True)
 
     # Define the grid spacing
@@ -59,7 +57,7 @@ if __name__ == "__main__":
     eikonal_solver = Eikonal3D(h, x, y, z)
 
     # Solve the Eikonal equation
-    u = eikonal_solver(u0, f)
+    u = eikonal_solver(f)
 
     # Print the result
     print("Solution u:")
