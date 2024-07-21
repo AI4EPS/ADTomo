@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
     # Compute some loss (e.g., mean of u)
     # loss = u.mean()
-    loss = u[m - 1, n - 1, 0]
+    loss = u[m - 2, n - 2, z]
 
     # Backward pass
     loss.backward()
@@ -78,16 +78,16 @@ if __name__ == "__main__":
     # print(f.grad.detach().numpy()[:, :, 0])
 
     fig, ax = plt.subplots(1, 3, figsize=(18, 5))
-    im = ax[0].imshow(f.detach().numpy()[:, :, 0], cmap="viridis")
+    im = ax[0].imshow(f.detach().numpy()[:, :, z], cmap="viridis")
     fig.colorbar(im, ax=ax[0])
     ax[0].set_title("Speed function f")
-    im = ax[1].imshow(u.detach().numpy()[:, :, 0] / h, cmap="viridis")
+    im = ax[1].imshow(u.detach().numpy()[:, :, z] / h, cmap="viridis")
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Solution u")
     # im = ax[1].imshow(u0.grad.detach().numpy()[:, :, 0], cmap="viridis")
     # fig.colorbar(im, ax=ax[1])
     # ax[1].set_title("Initial condition u0")
-    im = ax[2].imshow(f.grad.detach().numpy()[:, :, 0] / h, cmap="viridis")
+    im = ax[2].imshow(f.grad.detach().numpy()[:, :, z] / h, cmap="viridis")
     fig.colorbar(im, ax=ax[2])
     ax[2].set_title("Gradient of f")
 

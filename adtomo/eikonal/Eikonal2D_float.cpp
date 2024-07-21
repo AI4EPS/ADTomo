@@ -270,6 +270,11 @@ void backward(
 // PyTorch extension interface
 // torch::Tensor eikonal_forward(torch::Tensor f, double h, int ix, int jx) {
 torch::Tensor eikonal_forward(torch::Tensor f, double h, double x, double y) {
+
+    TORCH_CHECK(f.dim() == 2, "f should be 2D");
+    TORCH_CHECK(f.is_contiguous(), "f should be contiguous");
+
+
     auto m = f.size(0) - 1;
     auto n = f.size(1) - 1;
     
@@ -283,6 +288,11 @@ torch::Tensor eikonal_forward(torch::Tensor f, double h, double x, double y) {
 
 // torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor f, double h, int ix, int jx) {
 torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Tensor f, double h, double x, double y) {
+
+    TORCH_CHECK(grad_u.dim() == 2, "grad_u should be 2D");
+    TORCH_CHECK(grad_u.sizes() == u.sizes(), "grad_u and u should have the same size");
+    TORCH_CHECK(grad_u.is_contiguous(), "grad_u should be contiguous");
+
     auto m = f.size(0) - 1;
     auto n = f.size(1) - 1;
     
