@@ -5,32 +5,26 @@ import torch
 
 class Eikonal3DFunction(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, u0, f, h, x, y, z):
-        u = eikonal3d_op.forward(u0, f, h, x, y, z)
+    def forward(ctx, u0, f, h):
+        u = eikonal3d_op.forward(u0, f, h)
         ctx.save_for_backward(u, u0, f)
-        ctx.x = x
-        ctx.y = y
-        ctx.z = z
         ctx.h = h
         return u
 
     @staticmethod
     def backward(ctx, grad_output):
         u, u0, f = ctx.saved_tensors
-        grad_u0, grad_f = eikonal3d_op.backward(grad_output, u, u0, f, ctx.h, ctx.x, ctx.y, ctx.z)
-        return grad_u0, grad_f, None, None, None, None
+        grad_u0, grad_f = eikonal3d_op.backward(grad_output, u, u0, f, ctx.h)
+        return grad_u0, grad_f, None
 
 
 class Eikonal3D(torch.nn.Module):
-    def __init__(self, h, x, y, z):
+    def __init__(self, h):
         super(Eikonal3D, self).__init__()
         self.h = h
-        self.x = x
-        self.y = y
-        self.z = z
 
     def forward(self, u0, f):
-        return Eikonal3DFunction.apply(u0, f, self.h, float(self.x), float(self.y), float(self.z))
+        return Eikonal3DFunction.apply(u0, f, self.h)
 
 
 if __name__ == "__main__":
@@ -44,9 +38,8 @@ if __name__ == "__main__":
     u0_ = torch.ones((m, n, l), dtype=torch.float64) * 1000.0
     f_ = torch.ones((m, n, l), dtype=torch.float64)
 
-    x, y, z = 1, 1, 0
     # u0_[0, 0, 0] = 0.0
-    # u0_[1, 1, 0] = 0.0
+    u0_[1, 1, 0] = 0.0
     # f_[m // 3 : 2 * m // 3, n // 3 : 2 * n // 3, 0] /= 5.0
 
     u0 = torch.nn.Parameter(u0_, requires_grad=True)
@@ -56,14 +49,14 @@ if __name__ == "__main__":
     h = 0.5
 
     # Create the Eikonal solver
-    eikonal_solver = Eikonal3D(h, x, y, z)
+    eikonal_solver = Eikonal3D(h)
 
     # Solve the Eikonal equation
     u = eikonal_solver(u0, f)
 
     # Print the result
     print("Solution u:")
-    # print(u[:, :, 0])
+    print(u[:, :, 0])
 
     # Compute some loss (e.g., mean of u)
     # loss = u.mean()

@@ -47,14 +47,14 @@ if __name__ == "__main__":
     f = torch.nn.Parameter(f_, requires_grad=True)
 
     # Set a point source at the center
-    # ix, jx = (0, 0)
     ix, jx = (1, 1)
+    # ix, jx = (1, 1)
 
     # Define the grid spacing
     h = 0.5
 
     # Create the Eikonal solver
-    eikonal_solver = Eikonal2D(h, int(ix), int(jx))
+    eikonal_solver = Eikonal2D(h, ix, jx)
 
     # Solve the Eikonal equation
     u = eikonal_solver(f)

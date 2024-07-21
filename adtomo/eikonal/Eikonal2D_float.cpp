@@ -72,8 +72,8 @@ void sweep(double *u,
 // void forward(double *u, const double *f, int m, int n, double h, int ix, int jx)
 void forward(double *u, const double *f, int m, int n, double h, double x, double y)
 {
-  int ix0 = std::max(0, std::min((int)floor(x / h), m - 1));
-  int jx0 = std::max(0, std::min((int)floor(y / h), n - 1));
+  int ix0 = std::max(0, std::min((int)floor(x), m - 1));
+  int jx0 = std::max(0, std::min((int)floor(y), n - 1));
   int ix1 = ix0 + 1;
   int jx1 = jx0 + 1;
   for (int i = 0; i < m + 1; i++)
@@ -87,10 +87,10 @@ void forward(double *u, const double *f, int m, int n, double h, double x, doubl
   }
 
   // interpolate sqrt((x-ix0*h)*(x-ix0*h)+(y-jx0*h)*(y-jx0*h)) to u[ix0 * (n + 1) + jx0] =
-  u[ix0 * (n + 1) + jx0] = sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx0 * h) * (y - jx0 * h)) * f[ix0 * (n + 1) + jx0];
-  u[ix1 * (n + 1) + jx0] = sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx0 * h) * (y - jx0 * h)) * f[ix1 * (n + 1) + jx0];
-  u[ix0 * (n + 1) + jx1] = sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx1 * h) * (y - jx1 * h)) * f[ix0 * (n + 1) + jx1];
-  u[ix1 * (n + 1) + jx1] = sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx1 * h) * (y - jx1 * h)) * f[ix1 * (n + 1) + jx1];
+  u[ix0 * (n + 1) + jx0] = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h * f[ix0 * (n + 1) + jx0];
+  u[ix1 * (n + 1) + jx0] = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h * f[ix1 * (n + 1) + jx0];
+  u[ix0 * (n + 1) + jx1] = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h * f[ix0 * (n + 1) + jx1];
+  u[ix1 * (n + 1) + jx1] = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h * f[ix1 * (n + 1) + jx1];
 
   std::vector<int> I, J, iI, iJ;
   for (int i = 0; i < m + 1; i++)
@@ -141,8 +141,8 @@ void backward(
     const double *grad_u,
     const double *u, const double *f, int m, int n, double h, double x, double y)
 {
-  int ix0 = std::max(0, std::min((int)floor(x / h), m));
-  int jx0 = std::max(0, std::min((int)floor(y / h), n));
+  int ix0 = std::max(0, std::min((int)floor(x), m));
+  int jx0 = std::max(0, std::min((int)floor(y), n));
   int ix1 = ix0 + 1;
   int jx1 = jx0 + 1;
 
@@ -152,10 +152,10 @@ void backward(
     dFdf[i] = -2 * f[i] * h * h;
   }
   // dFdf[jx * (m + 1) + ix] = 0.0;
-  dFdf[ix0 * (n + 1) + jx0] = -sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx0 * h) * (y - jx0 * h));
-  dFdf[ix1 * (n + 1) + jx0] = -sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx0 * h) * (y - jx0 * h));
-  dFdf[ix0 * (n + 1) + jx1] = -sqrt((x - ix0 * h) * (x - ix0 * h) + (y - jx1 * h) * (y - jx1 * h));
-  dFdf[ix1 * (n + 1) + jx1] = -sqrt((x - ix1 * h) * (x - ix1 * h) + (y - jx1 * h) * (y - jx1 * h));
+  dFdf[ix0 * (n + 1) + jx0] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h;
+  dFdf[ix1 * (n + 1) + jx0] = -sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h;
+  dFdf[ix0 * (n + 1) + jx1] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h;
+  dFdf[ix1 * (n + 1) + jx1] = -sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h;
 
   std::vector<T> triplets;
 
@@ -171,7 +171,7 @@ void backward(
       // }
       if ((i == ix0 && j == jx0) || (i == ix1 && j == jx0) || (i == ix0 && j == jx1) || (i == ix1 && j == jx1)) {
         triplets.push_back(T(idx, idx, 1.0));
-        // continue;
+        continue;
       }
 
       // double val = 0.0;
