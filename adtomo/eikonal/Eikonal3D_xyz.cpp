@@ -146,11 +146,15 @@ void backward(
 
     // calculate gradients for \partial L/\partial f
     Eigen::VectorXd rhs(m * n * l);
+    // should not include the boundary, overwrite below 
     for (int i = 0; i < m * n * l; i++)
     {
         rhs[i] = -2 * f[i] * h * h;
     }
 
+    // overwrite the boundary
+    // ix, jx, kx are different points, otherwise should use += to accumulate gradients
+    // differentiate overwriting or accumulating gradients
     rhs[get_id(ix0, jx0, kx0)] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h;
     rhs[get_id(ix0, jx0, kx1)] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h;
     rhs[get_id(ix0, jx1, kx0)] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h;
