@@ -41,6 +41,8 @@ if __name__ == "__main__":
     picks = pd.read_csv(f"{data_path}/picks.csv", dtype={"event_id": str, "station_id": str})
     picks = picks.merge(events[["event_id", "event_time"]], on="event_id")
 
+    assert len(stations["station_id"].unique()) >= ddp_world_size, f"Number of stations ({len(stations['station_id'].unique())}) must be larger than world size ({ddp_world_size})"
+
     #### make the time values relative to event time in seconds
     picks["phase_time_origin"] = picks["phase_time"].copy()
     picks["phase_time"] = (
