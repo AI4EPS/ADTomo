@@ -156,8 +156,8 @@ class Eikonal2D(torch.nn.Module):
 
             if phase_type_ == "P":
                 tp2d = Eikonal2DFunction.apply(1.0 / self.vp, self.h, ix, iy)
-                tt = self.interp(tp2d, event_loc[:, 0], event_loc[:, 1]).squeeze()  # travel time
-                at = event_time.squeeze() + tt  # arrival time
+                tt = self.interp(tp2d, event_loc[:, 0], event_loc[:, 1])  # travel time
+                at = event_time.squeeze(-1) + tt  # arrival time
                 # pred.append(tt.detach().numpy())
                 # loss += F.mse_loss(tt, torch.tensor(picks_["travel_time"].values, dtype=self.dtype).squeeze())
                 pred.append(at.detach().numpy())
@@ -165,10 +165,10 @@ class Eikonal2D(torch.nn.Module):
 
             elif phase_type_ == "S":
                 ts2d = Eikonal2DFunction.apply(1.0 / self.vs, self.h, ix, iy)
-                tt = self.interp(ts2d, event_loc[:, 0], event_loc[:, 1]).squeeze()
+                tt = self.interp(ts2d, event_loc[:, 0], event_loc[:, 1])
                 # pred.append(tt.detach().numpy())
                 # loss += F.mse_loss(tt, torch.tensor(picks_["travel_time"].values, dtype=self.dtype).squeeze())
-                at = event_time.squeeze() + tt
+                at = event_time.squeeze(-1) + tt
                 pred.append(at.detach().numpy())
                 loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
 

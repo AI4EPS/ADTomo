@@ -10,240 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-
-def interp3d(time_table, x, y, z, xgrid, ygrid, zgrid, h):
-    nx = len(xgrid)
-    ny = len(ygrid)
-    nz = len(zgrid)
-    assert time_table.shape == (nx, ny, nz)
-
-    ix0 = np.floor((x - xgrid[0]) / h).clip(0, nx - 2).astype(int)
-    iy0 = np.floor((y - ygrid[0]) / h).clip(0, ny - 2).astype(int)
-    iz0 = np.floor((z - zgrid[0]) / h).clip(0, nz - 2).astype(int)
-    ix1 = ix0 + 1
-    iy1 = iy0 + 1
-    iz1 = iz0 + 1
-    x = (np.clip(x, xgrid[0], xgrid[-1]) - xgrid[0]) / h
-    y = (np.clip(y, ygrid[0], ygrid[-1]) - ygrid[0]) / h
-    z = (np.clip(z, zgrid[0], zgrid[-1]) - zgrid[0]) / h
-
-    Q000 = time_table[ix0, iy0, iz0]
-    Q100 = time_table[ix1, iy0, iz0]
-    Q010 = time_table[ix0, iy1, iz0]
-    Q110 = time_table[ix1, iy1, iz0]
-    Q001 = time_table[ix0, iy0, iz1]
-    Q101 = time_table[ix1, iy0, iz1]
-    Q011 = time_table[ix0, iy1, iz1]
-    Q111 = time_table[ix1, iy1, iz1]
-
-    t = (
-        Q000 * (ix1 - x) * (iy1 - y) * (iz1 - z)
-        + Q100 * (x - ix0) * (iy1 - y) * (iz1 - z)
-        + Q010 * (ix1 - x) * (y - iy0) * (iz1 - z)
-        + Q110 * (x - ix0) * (y - iy0) * (iz1 - z)
-        + Q001 * (ix1 - x) * (iy1 - y) * (z - iz0)
-        + Q101 * (x - ix0) * (iy1 - y) * (z - iz0)
-        + Q011 * (ix1 - x) * (y - iy0) * (z - iz0)
-        + Q111 * (x - ix0) * (y - iy0) * (z - iz0)
-    )
-
-    return t
-
-
-class Eikonal3DFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, f, h, x, y, z):
-        u = eikonal3d_op.forward(f, h, x, y, z)
-        ctx.save_for_backward(u, f)
-        ctx.h = h
-        ctx.x = x
-        ctx.y = y
-        ctx.z = z
-        return u
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        u, f = ctx.saved_tensors
-        grad_f = eikonal3d_op.backward(grad_output, u, f, ctx.h, ctx.x, ctx.y, ctx.z)
-        return grad_f, None, None, None, None
-
-
-class Clamp(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, min, max):
-        return input.clamp(min=min, max=max)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output, None, None
-
-
-def clamp(input, min, max):
-    return Clamp.apply(input, min, max)
-
-
-class Eikonal3D(torch.nn.Module):
-    def __init__(
-        self,
-        num_event,
-        num_station,
-        station_loc,
-        station_dt,
-        event_loc,
-        event_time,
-        vp,
-        vs,
-        max_dvp=0.0,
-        max_dvs=0.0,
-        lambda_vp=0.0,
-        lambda_vs=0.0,
-        config=None,
-        dtype=torch.float64,
-    ):
-        super().__init__()
-        self.dtype = dtype
-        self.num_event = num_event
-        self.event_loc = nn.Embedding(num_event, 3)
-        self.event_time = nn.Embedding(num_event, 1)
-        self.station_loc = nn.Embedding(num_station, 3)
-        self.station_dt = nn.Embedding(num_station, 1)  # same statioin term for P and S
-        self.station_loc.weight = torch.nn.Parameter(torch.tensor(station_loc, dtype=dtype), requires_grad=False)
-        self.station_dt.weight = torch.nn.Parameter(torch.zeros(num_station, 1, dtype=dtype), requires_grad=False)
-
-        self.event_loc.weight = torch.nn.Parameter(
-            torch.tensor(event_loc, dtype=dtype).contiguous(), requires_grad=False
-        )
-        self.event_time.weight = torch.nn.Parameter(
-            torch.tensor(event_time, dtype=dtype).contiguous(), requires_grad=False
-        )
-        self.vp0 = vp
-        self.vs0 = vs
-        self.dvp = torch.nn.Parameter(torch.zeros_like(vp), requires_grad=True)
-        self.dvs = torch.nn.Parameter(torch.zeros_like(vs), requires_grad=True)
-        self.max_dvp = max_dvp
-        self.max_dvs = max_dvs
-        self.lambda_vp = lambda_vp
-        self.lambda_vs = lambda_vs
-
-        self.smooth_kernel = torch.ones([1, 1, 5, 5, 3], dtype=dtype) / (5 * 5 * 3)
-
-        # set config
-        nx, ny, nz, h = config["nx"], config["ny"], config["nz"], config["h"]
-        self.nx = nx
-        self.ny = ny
-        self.nz = nz
-        self.h = h
-        self.xgrid = torch.arange(0, nx, dtype=dtype) * h
-        self.ygrid = torch.arange(0, ny, dtype=dtype) * h
-        self.zgrid = torch.arange(0, nz, dtype=dtype) * h
-
-    def interp(self, time_table, x, y, z):
-
-        ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, self.nx - 2).long()
-        iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, self.ny - 2).long()
-        iz0 = torch.floor((z - self.zgrid[0]) / self.h).clamp(0, self.nz - 2).long()
-        ix1 = ix0 + 1
-        iy1 = iy0 + 1
-        iz1 = iz0 + 1
-        # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        # y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        # z = (torch.clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
-        x = (clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        y = (clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        z = (clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
-
-        Q000 = time_table[ix0, iy0, iz0]
-        Q100 = time_table[ix1, iy0, iz0]
-        Q010 = time_table[ix0, iy1, iz0]
-        Q110 = time_table[ix1, iy1, iz0]
-        Q001 = time_table[ix0, iy0, iz1]
-        Q101 = time_table[ix1, iy0, iz1]
-        Q011 = time_table[ix0, iy1, iz1]
-        Q111 = time_table[ix1, iy1, iz1]
-
-        t = (
-            Q000 * (ix1 - x) * (iy1 - y) * (iz1 - z)
-            + Q100 * (x - ix0) * (iy1 - y) * (iz1 - z)
-            + Q010 * (ix1 - x) * (y - iy0) * (iz1 - z)
-            + Q110 * (x - ix0) * (y - iy0) * (iz1 - z)
-            + Q001 * (ix1 - x) * (iy1 - y) * (z - iz0)
-            + Q101 * (x - ix0) * (iy1 - y) * (z - iz0)
-            + Q011 * (ix1 - x) * (y - iy0) * (z - iz0)
-            + Q111 * (x - ix0) * (y - iy0) * (z - iz0)
-        )
-
-        return t
-
-    def forward(self, picks):
-
-        # %%
-        loss = 0
-        pred = []
-        idx = []
-        if self.max_dvp > 0 or self.max_dvs > 0:
-            dvp = torch.tanh(self.dvp) * self.max_dvp
-            dvs = torch.tanh(self.dvs) * self.max_dvs
-        else:
-            dvp = self.dvp
-            dvs = self.dvs
-        vp = self.vp0 + dvp
-        vs = self.vs0 + dvs
-
-        # for (station_index_, phase_type_), picks_ in picks.groupby(["station_index", "phase_type"]):
-        for (station_index_, phase_type_), picks_ in picks.groupby(
-            ["sta_idx", "phase_type"]
-        ):  ## sta_idx is used internally to ensure continous
-            idx.append(picks_.index)
-            station_loc = self.station_loc(torch.tensor(station_index_, dtype=torch.int64))
-
-            event_index_ = torch.tensor(picks_["event_index"].values, dtype=torch.int64)
-            event_loc = self.event_loc(event_index_)
-            event_time = self.event_time(event_index_)
-
-            if phase_type_ == "P":
-                tp3d = Eikonal3DFunction.apply(
-                    1.0 / vp,
-                    self.h,
-                    station_loc[0] / self.h,
-                    station_loc[1] / self.h,
-                    station_loc[2] / self.h,
-                )
-                tt = self.interp(tp3d, event_loc[:, 0], event_loc[:, 1], event_loc[:, 2])  # travel time
-                at = event_time.squeeze(-1) + tt  # arrival time
-                # pred.append(tt.detach().numpy())
-                # loss += F.mse_loss(tt, torch.tensor(picks_["travel_time"].values, dtype=self.dtype).squeeze())
-                pred.append(at.detach().numpy())
-                loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype))
-
-            elif phase_type_ == "S":
-                ts3d = Eikonal3DFunction.apply(
-                    1.0 / vs,
-                    self.h,
-                    station_loc[0] / self.h,
-                    station_loc[1] / self.h,
-                    station_loc[2] / self.h,
-                )
-                tt = self.interp(ts3d, event_loc[:, 0], event_loc[:, 1], event_loc[:, 2])
-                at = event_time.squeeze(-1) + tt
-                # pred.append(tt.detach().numpy())
-                # loss += F.mse_loss(tt, torch.tensor(picks_["travel_time"].values, dtype=self.dtype).squeeze())
-                pred.append(at.detach().numpy())
-                loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype))
-
-        smooth_dvp = F.conv3d(dvp.unsqueeze(0).unsqueeze(0), self.smooth_kernel, padding="same").squeeze(0).squeeze(0)
-        smooth_dvs = F.conv3d(dvs.unsqueeze(0).unsqueeze(0), self.smooth_kernel, padding="same").squeeze(0).squeeze(0)
-
-        if self.lambda_vp > 0 or self.lambda_vs > 0:
-            loss += self.lambda_vp * F.mse_loss(smooth_dvp, dvp) + self.lambda_vs * F.mse_loss(smooth_dvs, dvs)
-        pred_df = pd.DataFrame(
-            {
-                "index": np.concatenate(idx),
-                "pred_s": np.concatenate(pred),
-            }
-        )
-        pred_df = pred_df.sort_values("index", ignore_index=True)
-        return pred_df, loss
-
+from adtomo import Eikonal3D
+from adtomo.eikonal3d import interp3d
 
 # %%
 if __name__ == "__main__":
@@ -416,10 +184,10 @@ if __name__ == "__main__":
     # %%
     ######################################### Load Synthetic Data #########################################
     data_path = "data"
-    events = pd.read_csv(f"{data_path}/events.csv")
-    stations = pd.read_csv(f"{data_path}/stations.csv")
-    picks = pd.read_csv(f"{data_path}/picks.csv")
-    picks = picks.merge(events[["event_index", "event_time"]], on="event_index")
+    events = pd.read_csv(f"{data_path}/events.csv", dtype={"event_id": str})
+    stations = pd.read_csv(f"{data_path}/stations.csv", dtype={"station_id": str})
+    picks = pd.read_csv(f"{data_path}/picks.csv", dtype={"event_id": str, "station_id": str})
+    picks = picks.merge(events[["event_id", "event_time"]], on="event_id")
 
     #### make the time values relative to event time in seconds
     picks["phase_time_origin"] = picks["phase_time"].copy()
@@ -433,8 +201,12 @@ if __name__ == "__main__":
 
     with open(f"{data_path}/config.json", "r") as f:
         eikonal_config = json.load(f)
-    events = events.sort_values("event_index").set_index("event_index")
-    stations = stations.sort_values("station_index").set_index("station_index")
+    # events = events.sort_values("event_index").set_index("event_index")
+    # stations = stations.sort_values("station_index").set_index("station_index")
+    events["eve_idx"] = np.arange(len(events))  # continuous index from 0 to num_event/num_station
+    stations["sta_idx"] = np.arange(len(stations))
+    picks = picks.merge(events[["event_id", "eve_idx"]], on="event_id")  ## eve_idx, and sta_idx are used internally
+    picks = picks.merge(stations[["station_id", "sta_idx"]], on="station_id")
     num_event = len(events)
     num_station = len(stations)
     nx, ny, nz, h = eikonal_config["nx"], eikonal_config["ny"], eikonal_config["nz"], eikonal_config["h"]
