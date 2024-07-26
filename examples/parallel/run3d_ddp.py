@@ -1,6 +1,7 @@
 # %%
 import json
 import os
+import time
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -125,6 +126,7 @@ if __name__ == "__main__":
     if ddp_local_rank == 0:
         print("Initial loss:", loss.item())
 
+    t0 = time.time()
     optimizer = optim.LBFGS(params=eikonal3d.parameters(), max_iter=1000, line_search_fn="strong_wolfe")
 
     def closure():
@@ -154,6 +156,9 @@ if __name__ == "__main__":
     #     norm = torch.nn.utils.clip_grad_norm_(eikonal3d.parameters(), 1.0)
     #     if master_process:
     #         print("Loss:", loss.item())
+
+    if ddp_local_rank == 0:
+        print(f"Inversion time: {time.time() - t0:.2f}s")
 
     # preds, loss = eikonal3d(picks)
     preds, loss = eikonal3d(raw_picks)

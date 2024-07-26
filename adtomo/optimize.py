@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 
-from .model import Eikonal2D
+# from .model import Eikonal2D
 
 
 def optimize(args, config, data_loader, eikonal_2d):
