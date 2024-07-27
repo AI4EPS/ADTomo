@@ -191,8 +191,8 @@ class Eikonal3D(torch.nn.Module):
 
         # for (station_index_, phase_type_), picks_ in picks.groupby(["station_index", "phase_type"]):
         for (station_index_, phase_type_), picks_ in picks.groupby(
-            ["sta_idx", "phase_type"]
-        ):  ## sta_idx is used internally to ensure continous
+            ["idx_sta", "phase_type"]
+        ):  ## idx_sta is used internally to ensure continous
             idx.append(picks_.index)
             station_loc = self.station_loc(torch.tensor(station_index_, dtype=torch.int64))
 

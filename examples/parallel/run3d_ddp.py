@@ -41,7 +41,9 @@ if __name__ == "__main__":
     picks = pd.read_csv(f"{data_path}/picks.csv", dtype={"event_id": str, "station_id": str})
     picks = picks.merge(events[["event_id", "event_time"]], on="event_id")
 
-    assert len(stations["station_id"].unique()) >= ddp_world_size, f"Number of stations ({len(stations['station_id'].unique())}) must be larger than world size ({ddp_world_size})"
+    assert (
+        len(stations["station_id"].unique()) >= ddp_world_size
+    ), f"Number of stations ({len(stations['station_id'].unique())}) must be larger than world size ({ddp_world_size})"
 
     #### make the time values relative to event time in seconds
     picks["phase_time_origin"] = picks["phase_time"].copy()
@@ -53,14 +55,17 @@ if __name__ == "__main__":
     events["event_time"] = np.zeros(len(events))  # relative to event time
     ####
 
-    with open(f"{data_path}/config.json", "r") as f:
-        eikonal_config = json.load(f)
+    #### make the station and event index continuous (0, 1, 2, ...) for internal use
     # events = events.sort_values("event_index").set_index("event_index")
     # stations = stations.sort_values("station_index").set_index("station_index")
-    events["eve_idx"] = np.arange(len(events))  # continuous index from 0 to num_event/num_station
-    stations["sta_idx"] = np.arange(len(stations))
-    picks = picks.merge(events[["event_id", "eve_idx"]], on="event_id")  ## eve_idx, and sta_idx are used internally
-    picks = picks.merge(stations[["station_id", "sta_idx"]], on="station_id")
+    events["idx_eve"] = np.arange(len(events))  # continuous index from 0 to num_event/num_station
+    stations["idx_sta"] = np.arange(len(stations))
+    picks = picks.merge(events[["event_id", "idx_eve"]], on="event_id")  ## idx_eve, and idx_sta are used internally
+    picks = picks.merge(stations[["station_id", "idx_sta"]], on="station_id")
+    ####
+
+    with open(f"{data_path}/config.json", "r") as f:
+        eikonal_config = json.load(f)
     num_event = len(events)
     num_station = len(stations)
     nx, ny, nz, h = eikonal_config["nx"], eikonal_config["ny"], eikonal_config["nz"], eikonal_config["h"]
@@ -83,6 +88,10 @@ if __name__ == "__main__":
         events[["event_time"]].values,
         vp,
         vs,
+        # max_dvp=1.0,
+        # max_dvs=0.5,
+        # lambda_vp=1.0,
+        # lambda_vs=1.0,
         config=eikonal_config,
     )
     preds, loss = eikonal3d(picks)
@@ -119,7 +128,7 @@ if __name__ == "__main__":
     plt.savefig(f"{data_path}/initial3d_vp_vs_yz.png")
 
     raw_picks = picks.copy()
-    picks = picks[picks["sta_idx"] % ddp_world_size == ddp_local_rank]
+    picks = picks[picks["idx_sta"] % ddp_world_size == ddp_local_rank]
     print(f"Rank {ddp_rank} has {len(picks)} picks")
     if ddp:
         eikonal3d = DDP(eikonal3d)

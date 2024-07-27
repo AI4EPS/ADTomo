@@ -203,10 +203,10 @@ if __name__ == "__main__":
         eikonal_config = json.load(f)
     # events = events.sort_values("event_index").set_index("event_index")
     # stations = stations.sort_values("station_index").set_index("station_index")
-    events["eve_idx"] = np.arange(len(events))  # continuous index from 0 to num_event/num_station
-    stations["sta_idx"] = np.arange(len(stations))
-    picks = picks.merge(events[["event_id", "eve_idx"]], on="event_id")  ## eve_idx, and sta_idx are used internally
-    picks = picks.merge(stations[["station_id", "sta_idx"]], on="station_id")
+    events["idx_eve"] = np.arange(len(events))  # continuous index from 0 to num_event/num_station
+    stations["idx_sta"] = np.arange(len(stations))
+    picks = picks.merge(events[["event_id", "idx_eve"]], on="event_id")  ## idx_eve, and idx_sta are used internally
+    picks = picks.merge(stations[["station_id", "idx_sta"]], on="station_id")
     num_event = len(events)
     num_station = len(stations)
     nx, ny, nz, h = eikonal_config["nx"], eikonal_config["ny"], eikonal_config["nz"], eikonal_config["h"]
