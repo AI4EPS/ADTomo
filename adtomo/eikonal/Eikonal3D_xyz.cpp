@@ -100,14 +100,26 @@ void forward(double *u, const double *f, double h,
     {
         u[i] = 100000.0;
     }
-    u(ix0, jx0, kx0) = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h * f(ix0, jx0, kx0);
-    u(ix0, jx0, kx1) = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h * f(ix0, jx0, kx1);
-    u(ix0, jx1, kx0) = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h * f(ix0, jx1, kx0);
-    u(ix0, jx1, kx1) = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h * f(ix0, jx1, kx1);
-    u(ix1, jx0, kx0) = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h * f(ix1, jx0, kx0);
-    u(ix1, jx0, kx1) = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h * f(ix1, jx0, kx1);
-    u(ix1, jx1, kx0) = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h * f(ix1, jx1, kx0);
-    u(ix1, jx1, kx1) = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h * f(ix1, jx1, kx1);
+    // Option 1: interpolattion
+    // u(ix0, jx0, kx0) = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h * f(ix0, jx0, kx0);
+    // u(ix0, jx0, kx1) = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h * f(ix0, jx0, kx1);
+    // u(ix0, jx1, kx0) = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h * f(ix0, jx1, kx0);
+    // u(ix0, jx1, kx1) = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h * f(ix0, jx1, kx1);
+    // u(ix1, jx0, kx0) = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h * f(ix1, jx0, kx0);
+    // u(ix1, jx0, kx1) = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h * f(ix1, jx0, kx1);
+    // u(ix1, jx1, kx0) = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h * f(ix1, jx1, kx0);
+    // u(ix1, jx1, kx1) = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h * f(ix1, jx1, kx1);
+
+    // Option 2: choose the center slowness value
+    double fcenter = (f(ix0, jx0, kx0) + f(ix0, jx0, kx1) + f(ix0, jx1, kx0) + f(ix0, jx1, kx1) + f(ix1, jx0, kx0) + f(ix1, jx0, kx1) + f(ix1, jx1, kx0) + f(ix1, jx1, kx1)) / 8.0;
+    u(ix0, jx0, kx0) = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h * fcenter;
+    u(ix0, jx0, kx1) = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h * fcenter;
+    u(ix0, jx1, kx0) = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h * fcenter;
+    u(ix0, jx1, kx1) = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h * fcenter;
+    u(ix1, jx0, kx0) = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h * fcenter;
+    u(ix1, jx0, kx1) = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h * fcenter;
+    u(ix1, jx1, kx0) = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h * fcenter;
+    u(ix1, jx1, kx1) = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h * fcenter;
 
     auto u_old = new double[m * n * l];
     for (int i = 0; i < 20; i++)
@@ -152,17 +164,17 @@ void backward(
         rhs[i] = -2 * f[i] * h * h;
     }
 
-    // overwrite the boundary
+    // Option 1: overwrite the boundary
     // ix, jx, kx are different points, otherwise should use += to accumulate gradients
     // differentiate overwriting or accumulating gradients
-    rhs[get_id(ix0, jx0, kx0)] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h;
-    rhs[get_id(ix0, jx0, kx1)] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h;
-    rhs[get_id(ix0, jx1, kx0)] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h;
-    rhs[get_id(ix0, jx1, kx1)] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h;
-    rhs[get_id(ix1, jx0, kx0)] = -sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h;
-    rhs[get_id(ix1, jx0, kx1)] = -sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h;
-    rhs[get_id(ix1, jx1, kx0)] = -sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h;
-    rhs[get_id(ix1, jx1, kx1)] = -sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h;
+    // rhs[get_id(ix0, jx0, kx0)] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h;
+    // rhs[get_id(ix0, jx0, kx1)] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h;
+    // rhs[get_id(ix0, jx1, kx0)] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h;
+    // rhs[get_id(ix0, jx1, kx1)] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h;
+    // rhs[get_id(ix1, jx0, kx0)] = -sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h;
+    // rhs[get_id(ix1, jx0, kx1)] = -sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h;
+    // rhs[get_id(ix1, jx1, kx0)] = -sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h;
+    // rhs[get_id(ix1, jx1, kx1)] = -sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h;
 
     std::vector<T> triplets;
     std::set<int> zero_id;
@@ -245,6 +257,7 @@ void backward(
         // | 0 1     |
         // | 0   1   |
         // | 0    .. |
+        printf("Warning: zero_id.size() = %d\n", zero_id.size());
         for (auto &t : triplets)
         {
             if (zero_id.count(t.col()) || zero_id.count(t.row()))
@@ -268,6 +281,27 @@ void backward(
     {
         grad_f[i] = -res[i] * rhs[i];
     }
+
+    // Option 2: choose the center slowness value
+    double grad000 = (
+        res[get_id(ix0, jx0, kx0)] * sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h
+        + res[get_id(ix0, jx0, kx1)] * sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h
+        + res[get_id(ix0, jx1, kx0)] * sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h
+        + res[get_id(ix0, jx1, kx1)] * sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h
+        + res[get_id(ix1, jx0, kx0)] * sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx0) * (z - kx0)) * h
+        + res[get_id(ix1, jx0, kx1)] * sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0) + (z - kx1) * (z - kx1)) * h
+        + res[get_id(ix1, jx1, kx0)] * sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx0) * (z - kx0)) * h
+        + res[get_id(ix1, jx1, kx1)] * sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1) + (z - kx1) * (z - kx1)) * h
+    ) / 8.0;
+    grad_f[get_id(ix0, jx0, kx0)] = grad000;
+    grad_f[get_id(ix0, jx0, kx1)] = grad000;
+    grad_f[get_id(ix0, jx1, kx0)] = grad000;
+    grad_f[get_id(ix0, jx1, kx1)] = grad000;
+    grad_f[get_id(ix1, jx0, kx0)] = grad000;
+    grad_f[get_id(ix1, jx0, kx1)] = grad000;
+    grad_f[get_id(ix1, jx1, kx0)] = grad000;
+    grad_f[get_id(ix1, jx1, kx1)] = grad000;
+
 }
 
 // PyTorch extension interface

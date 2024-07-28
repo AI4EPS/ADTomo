@@ -49,7 +49,7 @@ if __name__ == "__main__":
     f = torch.nn.Parameter(f_, requires_grad=True)
 
     # Set a point source at the center
-    x, y, z = 0, 0, 0
+    x, y, z = 0.0, 0.0, 0.0
 
     # Define the grid spacing
     h = 0.5
@@ -83,14 +83,13 @@ if __name__ == "__main__":
 
     y_ = y_.item()
 
-    print("dy_:", dy_[:, :, z])
+    print("dy_:", dy_[:, :, :])
 
     for g_ in gs_:
         ms_.append(m_ + g_ * v_)
         ys_.append(scalar_function(ms_[-1]).item())
         s_.append(ys_[-1] - y_)
         w_.append(s_[-1] - g_ * torch.sum(v_ * dy_))
-        # w_.append(-g_ * torch.sum(v_ * dy_))
 
     plt.figure()
     plt.loglog(gs_, np.abs(s_), "*-", label="finite difference")

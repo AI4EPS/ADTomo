@@ -1,10 +1,9 @@
+import random
+
 import eikonal2d_op
 import matplotlib.pyplot as plt
-import torch
-
 import numpy as np
-import matplotlib.pyplot as plt
-import random
+import torch
 
 
 class Eikonal2DFunction(torch.autograd.Function):
@@ -40,7 +39,7 @@ if __name__ == "__main__":
     torch.manual_seed(0)
 
     # Define the grid size
-    m, n = 3, 3
+    m, n = 2, 3
 
     # Create initial speed function (f)
     f_ = torch.ones((m, n), dtype=torch.float64)

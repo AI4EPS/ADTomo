@@ -37,12 +37,16 @@ if __name__ == "__main__":
 
     # Define the grid size
     m, n = 20, 15
+    # m, n = 50, 100
 
     # Create initial speed function (f)
     f_ = torch.ones((m, n), dtype=torch.float64)
     # f_[m // 3 : 2 * m // 3, n // 3 : 2 * n // 3] /= 5.0
-    # f_ = torch.linspace(10.0, 1.0, m, dtype=torch.float64)
-    # f_ = f_.repeat(n, 1).t()
+    # f_ = torch.linspace(5.0, 1.0, m, dtype=torch.float64)
+    # f_ = torch.arange(m, dtype=torch.float64) / 15.0 + 2.0
+    # f_ = f_.flip(0)
+    # f_ = f_.repeat(n, 1).T.contiguous()
+    # print(f_.shape)
 
     f = torch.nn.Parameter(f_, requires_grad=True)
 
@@ -66,7 +70,7 @@ if __name__ == "__main__":
     # Compute some loss (e.g., mean of u)
     # loss = u.mean()
     loss = u[m - 1, n - 1]
-    # loss = u[0, n - 1]
+    # loss = u[1, n - 2]
     # loss = u.mean()
     # loss = u[0, 1]
     # loss = u[1, 1]

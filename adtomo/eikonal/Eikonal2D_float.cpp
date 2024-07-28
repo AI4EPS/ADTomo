@@ -88,11 +88,19 @@ void forward(double *u, const double *f, int m, int n, double h, double x, doubl
     }
   }
 
-  // interpolate sqrt((x-ix0*h)*(x-ix0*h)+(y-jx0*h)*(y-jx0*h)) to u[ix0 * (n + 1) + jx0] =
-  u[ix0 * (n + 1) + jx0] = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h * f[ix0 * (n + 1) + jx0];
-  u[ix1 * (n + 1) + jx0] = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h * f[ix1 * (n + 1) + jx0];
-  u[ix0 * (n + 1) + jx1] = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h * f[ix0 * (n + 1) + jx1];
-  u[ix1 * (n + 1) + jx1] = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h * f[ix1 * (n + 1) + jx1];
+  // Option 1: interpolate sqrt((x-ix0*h)*(x-ix0*h)+(y-jx0*h)*(y-jx0*h)) to u[ix0 * (n + 1) + jx0] =
+  // u[ix0 * (n + 1) + jx0] = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h * f[ix0 * (n + 1) + jx0];
+  // u[ix1 * (n + 1) + jx0] = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h * f[ix1 * (n + 1) + jx0];
+  // u[ix0 * (n + 1) + jx1] = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h * f[ix0 * (n + 1) + jx1];
+  // u[ix1 * (n + 1) + jx1] = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h * f[ix1 * (n + 1) + jx1];
+  
+  // Option 2: choose the center slowness value
+  double fcenter = (f[ix0 * (n + 1) + jx0] + f[ix1 * (n + 1) + jx0] + f[ix0 * (n + 1) + jx1] + f[ix1 * (n + 1) + jx1]) / 4.0;
+  u[ix0 * (n + 1) + jx0] = sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h * fcenter;
+  u[ix1 * (n + 1) + jx0] = sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h * fcenter;
+  u[ix0 * (n + 1) + jx1] = sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h * fcenter;
+  u[ix1 * (n + 1) + jx1] = sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h * fcenter;
+
 
   std::vector<int> I, J, iI, iJ;
   for (int i = 0; i < m + 1; i++)
@@ -153,11 +161,12 @@ void backward(
   {
     dFdf[i] = -2 * f[i] * h * h;
   }
-  // dFdf[jx * (m + 1) + ix] = 0.0;
-  dFdf[ix0 * (n + 1) + jx0] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h;
-  dFdf[ix1 * (n + 1) + jx0] = -sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h;
-  dFdf[ix0 * (n + 1) + jx1] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h;
-  dFdf[ix1 * (n + 1) + jx1] = -sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h;
+
+  // Option 1: 
+  // dFdf[ix0 * (n + 1) + jx0] = -sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h;
+  // dFdf[ix1 * (n + 1) + jx0] = -sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h;
+  // dFdf[ix0 * (n + 1) + jx1] = -sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h;
+  // dFdf[ix1 * (n + 1) + jx1] = -sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h;
 
   std::vector<T> triplets;
 
@@ -265,6 +274,18 @@ void backward(
   {
     grad_f[i] = -res[i] * dFdf[i];
   }
+  
+  // Option 2: choose the center slowness value
+  double grad00 = (res[ix0 * (n + 1) + jx0] * sqrt((x - ix0) * (x - ix0) + (y - jx0) * (y - jx0)) * h
+  + res[ix1 * (n + 1) + jx0] * sqrt((x - ix1) * (x - ix1) + (y - jx0) * (y - jx0)) * h
+  + res[ix0 * (n + 1) + jx1] * sqrt((x - ix0) * (x - ix0) + (y - jx1) * (y - jx1)) * h
+  + res[ix1 * (n + 1) + jx1] * sqrt((x - ix1) * (x - ix1) + (y - jx1) * (y - jx1)) * h) / 4.0;
+
+  grad_f[ix0 * (n + 1) + jx0] = grad00;
+  grad_f[ix1 * (n + 1) + jx0] = grad00;
+  grad_f[ix0 * (n + 1) + jx1] = grad00;
+  grad_f[ix1 * (n + 1) + jx1] = grad00;
+
 }
 
 // PyTorch extension interface

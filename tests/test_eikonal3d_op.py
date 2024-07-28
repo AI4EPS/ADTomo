@@ -70,6 +70,8 @@ if __name__ == "__main__":
     # Backward pass
     loss.backward()
 
+    # torch.nn.utils.clip_grad_value_(f, 0.3 * h)
+
     # Print gradients
     print("\nGradient of u0:")
     # print(u0.grad.detach().numpy()[:, :, 0])
@@ -91,4 +93,4 @@ if __name__ == "__main__":
     fig.colorbar(im, ax=ax[2])
     ax[2].set_title("Gradient of f")
 
-    plt.savefig("eikonal3d.png")
+    plt.savefig("solution3d.png")

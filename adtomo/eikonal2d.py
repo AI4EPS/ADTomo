@@ -144,15 +144,17 @@ class Eikonal2D(torch.nn.Module):
         loss = 0
         pred = []
         idx = []
-        for (station_index_, phase_type_), picks_ in picks.groupby(["station_index", "phase_type"]):
+
+        ## idx_sta an idx_eve are used internally to ensure continous index
+        for (idx_sta_, phase_type_), picks_ in picks.groupby(["idx_sta", "phase_type"]):
             idx.append(picks_.index)
-            station_loc = self.station_loc(torch.tensor(station_index_, dtype=torch.int64))
+            station_loc = self.station_loc(torch.tensor(idx_sta_, dtype=torch.int64))
             ix = int(round(station_loc[0].item() / self.h))
             iy = int(round(station_loc[1].item() / self.h))
 
-            event_index_ = torch.tensor(picks_["event_index"].values, dtype=torch.int64)
-            event_loc = self.event_loc(event_index_)
-            event_time = self.event_time(event_index_)
+            idx_eve_ = torch.tensor(picks_["idx_eve"].values, dtype=torch.int64)
+            event_loc = self.event_loc(idx_eve_)
+            event_time = self.event_time(idx_eve_)
 
             if phase_type_ == "P":
                 tp2d = Eikonal2DFunction.apply(1.0 / self.vp, self.h, ix, iy)
@@ -323,8 +325,10 @@ if __name__ == "__main__":
 
     with open(f"{data_path}/config.json", "r") as f:
         eikonal_config = json.load(f)
-    events = events.sort_values("event_index").set_index("event_index")
-    stations = stations.sort_values("station_index").set_index("station_index")
+    events["idx_eve"] = np.arange(len(events))  # continuous index from 0 to num_event/num_station
+    stations["idx_sta"] = np.arange(len(stations))
+    picks = picks.merge(events[["event_id", "idx_eve"]], on="event_id")  ## idx_eve, and idx_sta are used internally
+    picks = picks.merge(stations[["station_id", "idx_sta"]], on="station_id")
     num_event = len(events)
     num_station = len(stations)
     nx, ny, h = eikonal_config["nx"], eikonal_config["ny"], eikonal_config["h"]
