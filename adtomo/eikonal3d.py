@@ -191,9 +191,7 @@ class Eikonal3D(torch.nn.Module):
 
         ## idx_sta an idx_eve are used internally to ensure continous index
         # for (station_index_, phase_type_), picks_ in picks.groupby(["station_index", "phase_type"]):
-        for (idx_sta_, phase_type_), picks_ in picks.groupby(
-            ["idx_sta", "phase_type"]
-        ):  ## idx_sta is used internally to ensure continous
+        for (idx_sta_, phase_type_), picks_ in picks.groupby(["idx_sta", "phase_type"]):
             idx.append(picks_.index)
             station_loc = self.station_loc(torch.tensor(idx_sta_, dtype=torch.int64))
 
@@ -236,6 +234,7 @@ class Eikonal3D(torch.nn.Module):
 
         if self.lambda_vp > 0 or self.lambda_vs > 0:
             loss += self.lambda_vp * F.mse_loss(smooth_dvp, dvp) + self.lambda_vs * F.mse_loss(smooth_dvs, dvs)
+
         pred_df = pd.DataFrame(
             {
                 "index": np.concatenate(idx),
@@ -460,6 +459,10 @@ if __name__ == "__main__":
         events[["event_time"]].values,
         vp,
         vs,
+        # max_dvp=0.0,
+        # max_dvs=0.0,
+        # lambda_vp=1.0,
+        # lambda_vs=1.0,
         config=eikonal_config,
     )
     preds, loss = eikonal3d(picks)
@@ -495,7 +498,17 @@ if __name__ == "__main__":
     ax[1].set_title("Vs")
     plt.savefig(f"{data_path}/initial3d_vp_vs_yz.png")
 
-    optimizer = optim.LBFGS(params=eikonal3d.parameters(), max_iter=1000, line_search_fn="strong_wolfe")
+    eikonal3d.dvp.requires_grad = True
+    eikonal3d.dvs.requires_grad = True
+    eikonal3d.event_loc.weight.requires_grad = False
+    eikonal3d.event_time.weight.requires_grad = False
+    print(
+        "Optimizing parameters:\n"
+        + "\n".join([f"{name}: {param.size()}" for name, param in eikonal3d.named_parameters() if param.requires_grad]),
+    )
+
+    parameters = [param for param in eikonal3d.parameters() if param.requires_grad]
+    optimizer = optim.LBFGS(params=parameters, max_iter=1000, line_search_fn="strong_wolfe")
     print("Initial loss:", loss.item())
 
     def closure():
@@ -537,3 +550,27 @@ if __name__ == "__main__":
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Vs")
     plt.savefig(f"{data_path}/inversed3d_vp_vs_yz.png")
+
+    # %%
+    fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(5, 5))
+    ax[0, 0].plot(events["x_km"], events["y_km"], ".", label="True Events")
+    ax[0, 0].plot(event_loc[:, 0], event_loc[:, 1], "x", label="Initial Events")
+    ax[0, 0].legend()
+    ax[0, 0].set_title("Station and Event Locations")
+    plt.savefig(f"{data_path}/inversed3d_station_event_xy.png")
+
+    # %%
+    fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(5, 5))
+    ax[0, 0].plot(events["x_km"], events["z_km"], ".", label="True Events")
+    ax[0, 0].plot(event_loc[:, 0], event_loc[:, 2], "x", label="Initial Events")
+    ax[0, 0].legend()
+    ax[0, 0].set_title("Station and Event Locations")
+    plt.savefig(f"{data_path}/inversed3d_station_event_xz.png")
+
+    # %%
+    fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(5, 5))
+    ax[0, 0].plot(events["y_km"], events["z_km"], ".", label="True Events")
+    ax[0, 0].plot(event_loc[:, 1], event_loc[:, 2], "x", label="Initial Events")
+    ax[0, 0].legend()
+    ax[0, 0].set_title("Station and Event Locations")
+    plt.savefig(f"{data_path}/inversed3d_station_event_yz.png")

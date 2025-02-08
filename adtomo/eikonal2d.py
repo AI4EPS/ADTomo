@@ -79,6 +79,10 @@ class Eikonal2D(torch.nn.Module):
         event_time,
         vp,
         vs,
+        max_dvp=0.0,
+        max_dvs=0.0,
+        lambda_vp=0.0,
+        lambda_vs=0.0,
         config=None,
         dtype=torch.float64,
     ):
@@ -98,8 +102,16 @@ class Eikonal2D(torch.nn.Module):
         self.event_time.weight = torch.nn.Parameter(
             torch.tensor(event_time, dtype=dtype).contiguous(), requires_grad=False
         )
-        self.vp = torch.nn.Parameter(vp, requires_grad=True)
-        self.vs = torch.nn.Parameter(vs, requires_grad=True)
+        self.vp0 = vp
+        self.vs0 = vs
+        self.dvp = torch.nn.Parameter(torch.zeros_like(vp), requires_grad=True)
+        self.dvs = torch.nn.Parameter(torch.zeros_like(vs), requires_grad=True)
+        self.max_dvp = max_dvp
+        self.max_dvs = max_dvs
+        self.lambda_vp = lambda_vp
+        self.lambda_vs = lambda_vs
+
+        self.smooth_kernel = torch.ones([1, 1, 5, 5], dtype=dtype) / (5 * 5)
 
         # set config
         nx, ny, h = config["nx"], config["ny"], config["h"]
@@ -110,12 +122,9 @@ class Eikonal2D(torch.nn.Module):
         self.ygrid = torch.arange(0, ny, dtype=dtype) * h
 
     def interp(self, time_table, x, y):
-        nx = len(self.xgrid)
-        ny = len(self.ygrid)
-        assert time_table.shape == (nx, ny)
 
-        ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, nx - 2).long()
-        iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, ny - 2).long()
+        ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, self.nx - 2).long()
+        iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, self.ny - 2).long()
         ix1 = ix0 + 1
         iy1 = iy0 + 1
         # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
@@ -145,19 +154,26 @@ class Eikonal2D(torch.nn.Module):
         pred = []
         idx = []
 
+        if self.max_dvp > 0 or self.max_dvs > 0:
+            dvp = torch.tanh(self.dvp) * self.max_dvp
+            dvs = torch.tanh(self.dvs) * self.max_dvs
+        else:
+            dvp = self.dvp
+            dvs = self.dvs
+        vp = self.vp0 + dvp
+        vs = self.vs0 + dvs
+
         ## idx_sta an idx_eve are used internally to ensure continous index
         for (idx_sta_, phase_type_), picks_ in picks.groupby(["idx_sta", "phase_type"]):
             idx.append(picks_.index)
             station_loc = self.station_loc(torch.tensor(idx_sta_, dtype=torch.int64))
-            ix = int(round(station_loc[0].item() / self.h))
-            iy = int(round(station_loc[1].item() / self.h))
 
             idx_eve_ = torch.tensor(picks_["idx_eve"].values, dtype=torch.int64)
             event_loc = self.event_loc(idx_eve_)
             event_time = self.event_time(idx_eve_)
 
             if phase_type_ == "P":
-                tp2d = Eikonal2DFunction.apply(1.0 / self.vp, self.h, ix, iy)
+                tp2d = Eikonal2DFunction.apply(1.0 / vp, self.h, station_loc[0] / self.h, station_loc[1] / self.h)
                 tt = self.interp(tp2d, event_loc[:, 0], event_loc[:, 1])  # travel time
                 at = event_time.squeeze(-1) + tt  # arrival time
                 # pred.append(tt.detach().numpy())
@@ -166,13 +182,19 @@ class Eikonal2D(torch.nn.Module):
                 loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
 
             elif phase_type_ == "S":
-                ts2d = Eikonal2DFunction.apply(1.0 / self.vs, self.h, ix, iy)
+                ts2d = Eikonal2DFunction.apply(1.0 / vs, self.h, station_loc[0] / self.h, station_loc[1] / self.h)
                 tt = self.interp(ts2d, event_loc[:, 0], event_loc[:, 1])
                 # pred.append(tt.detach().numpy())
                 # loss += F.mse_loss(tt, torch.tensor(picks_["travel_time"].values, dtype=self.dtype).squeeze())
                 at = event_time.squeeze(-1) + tt
                 pred.append(at.detach().numpy())
                 loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
+
+        smooth_dvp = F.conv2d(dvp.unsqueeze(0).unsqueeze(0), self.smooth_kernel, padding="same").squeeze(0).squeeze(0)
+        smooth_dvs = F.conv2d(dvs.unsqueeze(0).unsqueeze(0), self.smooth_kernel, padding="same").squeeze(0).squeeze(0)
+
+        if self.lambda_vp > 0 or self.lambda_vs > 0:
+            loss += self.lambda_vp * F.mse_loss(smooth_dvp, dvp) + self.lambda_vs * F.mse_loss(smooth_dvs, dvs)
 
         pred_df = pd.DataFrame(
             {
@@ -295,6 +317,8 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(2, 1, squeeze=False, figsize=(10, 10))
     picks = picks.merge(stations, on="station_id")
     mapping_color = lambda x: f"C{int(x)}"
+    picks["phase_time"] = pd.to_datetime(picks["phase_time"])
+    events["event_time"] = pd.to_datetime(events["event_time"])
     ax[0, 0].scatter(picks["phase_time"], picks["x_km"], c=picks["event_index"].apply(mapping_color))
     ax[0, 0].scatter(events["event_time"], events["x_km"], c=events["event_index"].apply(mapping_color), marker="x")
     ax[0, 0].set_xlabel("Time (s)")
@@ -353,29 +377,36 @@ if __name__ == "__main__":
         events[["event_time"]].values,
         vp,
         vs,
-        eikonal_config,
+        # max_dvp=0.0,
+        # max_dvs=0.0,
+        # lambda_vp=1.0,
+        # lambda_vs=1.0,
+        config=eikonal_config,
     )
     preds, loss = eikonal2d(picks)
 
     ######################################### Optimize #########################################
     # %%
+    vp = eikonal2d.vp0.detach().numpy() + eikonal2d.dvp.detach().numpy()
+    vs = eikonal2d.vs0.detach().numpy() + eikonal2d.dvs.detach().numpy()
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    im = ax[0].imshow(eikonal2d.vp.detach().numpy(), cmap="viridis")
+    im = ax[0].imshow(vp, cmap="viridis")
     fig.colorbar(im, ax=ax[0])
     ax[0].set_title("Vp")
-    im = ax[1].imshow(eikonal2d.vs.detach().numpy(), cmap="viridis")
+    im = ax[1].imshow(vs, cmap="viridis")
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Vs")
     plt.savefig(f"{data_path}/initial2d_vp_vs.png")
 
-    eikonal2d.vp.requires_grad = True
-    eikonal2d.vs.requires_grad = True
+    eikonal2d.dvp.requires_grad = True
+    eikonal2d.dvs.requires_grad = True
     eikonal2d.event_loc.weight.requires_grad = False
     eikonal2d.event_time.weight.requires_grad = False
     print(
         "Optimizing parameters:\n"
         + "\n".join([f"{name}: {param.size()}" for name, param in eikonal2d.named_parameters() if param.requires_grad]),
     )
+
     parameters = [param for param in eikonal2d.parameters() if param.requires_grad]
     optimizer = optim.LBFGS(params=parameters, max_iter=1000, line_search_fn="strong_wolfe")
     print("Initial loss:", loss.item())
@@ -391,11 +422,13 @@ if __name__ == "__main__":
     preds, loss = eikonal2d(picks)
     print("Final loss:", loss.item())
 
+    vp = eikonal2d.vp0.detach().numpy() + eikonal2d.dvp.detach().numpy()
+    vs = eikonal2d.vs0.detach().numpy() + eikonal2d.dvs.detach().numpy()
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
-    im = ax[0].imshow(eikonal2d.vp.detach().numpy(), cmap="viridis")
+    im = ax[0].imshow(vp, cmap="viridis")
     fig.colorbar(im, ax=ax[0])
     ax[0].set_title("Vp")
-    im = ax[1].imshow(eikonal2d.vs.detach().numpy(), cmap="viridis")
+    im = ax[1].imshow(vs, cmap="viridis")
     fig.colorbar(im, ax=ax[1])
     ax[1].set_title("Vs")
     plt.savefig(f"{data_path}/inverted2d_vp_vs.png")
@@ -419,4 +452,4 @@ if __name__ == "__main__":
     ax[0, 0].set_ylabel("y (km)")
     ax[0, 0].legend()
     ax[0, 0].set_title("Station and Event Locations")
-    plt.savefig(f"{data_path}/inverted_station_event_2d.png")
+    plt.savefig(f"{data_path}/inverted2d_station_event.png")
