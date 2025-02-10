@@ -92,10 +92,10 @@ if __name__ == "__main__":
     events["event_time"] = events["event_time"].apply(lambda x: x.isoformat(timespec="milliseconds"))
     events.to_csv(f"{result_path}/events.csv", index=False)
 
+    # %%
     # vpvs_ratio = 1.73
     # vp = torch.ones((nx, ny, nz), dtype=torch.float64) * 6.0
     # vs = vp / vpvs_ratio
-
     # ### add anomaly
     # vp[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3), :] *= 1.1
     # vs[int(nx / 3) : int(2 * nx / 3), int(ny / 3) : int(2 * ny / 3), :] *= 1.1
@@ -351,7 +351,7 @@ if __name__ == "__main__":
             dist.all_reduce(loss, op=dist.ReduceOp.SUM)
             loss /= ddp_world_size
 
-        norm = torch.nn.utils.clip_grad_norm_(eikonal3d.parameters(), 1.0)
+        # norm = torch.nn.utils.clip_grad_norm_(eikonal3d.parameters(), 1.0)
         # if ddp_local_rank == 0:
         # print(f"Gradient norm: {norm.item()}")
 

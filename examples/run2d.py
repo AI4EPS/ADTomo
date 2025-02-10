@@ -34,6 +34,7 @@ if __name__ == "__main__":
         master_process = True
         print("Non-DDP run")
 
+    # %%
     ######################################## Create Synthetic Data #########################################
     np.random.seed(0)
     data_path = "data"
@@ -87,7 +88,7 @@ if __name__ == "__main__":
     events["event_time"] = events["event_time"].apply(lambda x: x.isoformat(timespec="milliseconds"))
     events.to_csv(f"{result_path}/events.csv", index=False)
 
-    #
+    # # %%
     # vpvs_ratio = 1.73
     # vp = torch.ones((nx, ny), dtype=torch.float64) * 6.0
     # vs = vp / vpvs_ratio
@@ -211,6 +212,8 @@ if __name__ == "__main__":
 
     vp = torch.ones((nx, ny), dtype=torch.float64) * vp_mean
     vs = torch.ones((nx, ny), dtype=torch.float64) * vs_mean
+    # vp = torch.ones((nx, ny), dtype=torch.float64) * 6.0
+    # vs = vp / vpvs_ratio
 
     ## initial event location
     event_loc = events[["x_km", "y_km"]].values
@@ -283,9 +286,9 @@ if __name__ == "__main__":
             dist.all_reduce(loss, op=dist.ReduceOp.SUM)
             loss /= ddp_world_size
 
-        norm = torch.nn.utils.clip_grad_norm_(parameters, 1.0)
+        # norm = torch.nn.utils.clip_grad_norm_(eikonal2d.parameters(), 1.0)
         # if ddp_local_rank == 0:
-        # print(f"Gradient norm: {norm.item()}")
+        #     print(f"Gradient norm: {norm.item()}")
 
         return loss
 
