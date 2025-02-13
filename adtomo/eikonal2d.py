@@ -81,8 +81,9 @@ class Eikonal2D(torch.nn.Module):
         vs,
         max_dvp=0.0,
         max_dvs=0.0,
-        lambda_vp=0.0,
-        lambda_vs=0.0,
+        lambda_dvp=0.0,
+        lambda_dvs=0.0,
+        lambda_sp_ratio=0.0,
         config=None,
         dtype=torch.float64,
     ):
@@ -108,10 +109,20 @@ class Eikonal2D(torch.nn.Module):
         self.dvs = torch.nn.Parameter(torch.zeros_like(vs), requires_grad=True)
         self.max_dvp = max_dvp
         self.max_dvs = max_dvs
-        self.lambda_vp = lambda_vp
-        self.lambda_vs = lambda_vs
+        self.lambda_dvp = lambda_dvp
+        self.lambda_dvs = lambda_dvs
+        self.lambda_sp_ratio = lambda_sp_ratio
 
-        self.smooth_kernel = torch.ones([1, 1, 5, 5], dtype=dtype) / (5 * 5)
+        # self.smooth_kernel = torch.ones([1, 1, 5, 5], dtype=dtype) / (5 * 5)
+        # self.smooth_kernel = torch.tensor([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], dtype=dtype).view(1, 1, 3, 3)
+        self.smooth_kernel = torch.tensor(
+            [
+                [-1, 1],
+                [1, -1],
+            ],
+            dtype=dtype,
+        ).view(1, 1, 2, 2)
+        self.smooth_kernel = self.smooth_kernel / self.smooth_kernel.abs().sum()
 
         # set config
         nx, ny, h = config["nx"], config["ny"], config["h"]
@@ -190,11 +201,18 @@ class Eikonal2D(torch.nn.Module):
                 pred.append(at.detach().numpy())
                 loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
 
-        smooth_dvp = F.conv2d(dvp.unsqueeze(0).unsqueeze(0), self.smooth_kernel, padding="same").squeeze(0).squeeze(0)
-        smooth_dvs = F.conv2d(dvs.unsqueeze(0).unsqueeze(0), self.smooth_kernel, padding="same").squeeze(0).squeeze(0)
+        if self.lambda_dvp > 0:
+            reg_dvp = F.conv2d(dvp.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            loss += self.lambda_dvp * reg_dvp.abs().sum()
 
-        if self.lambda_vp > 0 or self.lambda_vs > 0:
-            loss += self.lambda_vp * F.mse_loss(smooth_dvp, dvp) + self.lambda_vs * F.mse_loss(smooth_dvs, dvs)
+        if self.lambda_dvs > 0:
+            reg_dvs = F.conv2d(dvs.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            loss += self.lambda_dvs * reg_dvs.abs().sum()
+
+        if self.lambda_sp_ratio > 0:
+            sp_ratio = vs / vp
+            reg_sp_ratio = F.conv2d(sp_ratio.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            loss += self.lambda_sp_ratio * reg_sp_ratio.abs().sum()
 
         pred_df = pd.DataFrame(
             {

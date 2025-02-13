@@ -65,8 +65,8 @@ if __name__ == "__main__":
     xgrid = np.arange(0, nx) * h
     ygrid = np.arange(0, ny) * h
     eikonal_config.update({"xgrid": xgrid, "ygrid": ygrid})
-    num_station = 30
-    num_event = 30
+    num_station = 20
+    num_event = 100
     stations = []
     for i in range(num_station):
         x = np.random.randint(0, nx) * h
@@ -220,6 +220,9 @@ if __name__ == "__main__":
     # event_loc = events[["x_km", "y_km"]].values + np.random.randn(num_event, 2) * 10
     # event_loc = events[["x_km", "y_km"]].values * 0.0 + stations[["x_km", "y_km"]].values.mean(axis=0)
 
+    lambda_dvp = 1e-4
+    lambda_dvs = 1e-4
+    lambda_sp_ratio = 1e-4
     eikonal2d = Eikonal2D(
         num_event,
         num_station,
@@ -231,8 +234,9 @@ if __name__ == "__main__":
         vs,
         # max_dvp=1.0,
         # max_dvs=0.5,
-        lambda_vp=1.0,
-        lambda_vs=0.0,
+        lambda_dvp=lambda_dvp,
+        lambda_dvs=lambda_dvs,
+        lambda_sp_ratio=lambda_sp_ratio,
         config=eikonal_config,
     )
     preds, loss = eikonal2d(picks)
@@ -325,6 +329,10 @@ if __name__ == "__main__":
         fig.colorbar(im, ax=ax[1])
         ax[1].set_title("Vs")
         plt.savefig(f"{figure_path}/inverted2d_vp_vs.png", bbox_inches="tight")
+        plt.savefig(
+            f"{figure_path}/inverted2d_vp_vs_{lambda_dvp:.0e}_{lambda_dvs:.0e}_{lambda_sp_ratio:.0e}.png",
+            bbox_inches="tight",
+        )
 
         # %%
         fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(5, 5))

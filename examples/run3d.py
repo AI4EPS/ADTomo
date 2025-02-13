@@ -65,8 +65,8 @@ if __name__ == "__main__":
     ygrid = np.arange(0, ny) * h
     zgrid = np.arange(0, nz) * h
     eikonal_config.update({"xgrid": xgrid, "ygrid": ygrid, "zgrid": zgrid})
-    num_station = 10
-    num_event = 500
+    num_station = 20
+    num_event = 200
     stations = []
     for i in range(num_station):
         x = np.random.uniform(xgrid[0], xgrid[-1])
@@ -267,6 +267,9 @@ if __name__ == "__main__":
     ## initial event location
     event_loc = events[["x_km", "y_km", "z_km"]].values
 
+    lambda_dvp = 1e-4
+    lambda_dvs = 1e-4
+    lambda_sp_ratio = 1e-4
     eikonal3d = Eikonal3D(
         num_event,
         num_station,
@@ -278,8 +281,9 @@ if __name__ == "__main__":
         vs,
         # max_dvp=1.0,
         # max_dvs=0.5,
-        lambda_vp=1.0,
-        lambda_vs=1.0,
+        lambda_dvp=lambda_dvp,
+        lambda_dvs=lambda_dvs,
+        lambda_sp_ratio=lambda_sp_ratio,
         config=eikonal_config,
     )
     preds, loss = eikonal3d(picks)
@@ -391,6 +395,10 @@ if __name__ == "__main__":
         fig.colorbar(im, ax=ax[1])
         ax[1].set_title("Vs")
         plt.savefig(f"{figure_path}/inversed3d_vp_vs_xy.png", bbox_inches="tight")
+        plt.savefig(
+            f"{figure_path}/inversed3d_vp_vs_xy_{lambda_dvp:.0e}_{lambda_dvs:.0e}_{lambda_sp_ratio:.0e}.png",
+            bbox_inches="tight",
+        )
 
         fig, ax = plt.subplots(1, 2, figsize=(12, 5))
         im = ax[0].imshow(vp[:, ny // 2, :], cmap="bwr_r", vmin=vp_min.min(), vmax=vp_max.max())
@@ -400,6 +408,10 @@ if __name__ == "__main__":
         fig.colorbar(im, ax=ax[1])
         ax[1].set_title("Vs")
         plt.savefig(f"{figure_path}/inversed3d_vp_vs_xz.png", bbox_inches="tight")
+        plt.savefig(
+            f"{figure_path}/inversed3d_vp_vs_xz_{lambda_dvp:.0e}_{lambda_dvs:.0e}_{lambda_sp_ratio:.0e}.png",
+            bbox_inches="tight",
+        )
 
         fig, ax = plt.subplots(1, 2, figsize=(12, 5))
         im = ax[0].imshow(vp[nx // 2, :, :], cmap="bwr_r", vmin=vp_min.min(), vmax=vp_max.max())
@@ -409,6 +421,10 @@ if __name__ == "__main__":
         fig.colorbar(im, ax=ax[1])
         ax[1].set_title("Vs")
         plt.savefig(f"{figure_path}/inversed3d_vp_vs_yz.png", bbox_inches="tight")
+        plt.savefig(
+            f"{figure_path}/inversed3d_vp_vs_yz_{lambda_dvp:.0e}_{lambda_dvs:.0e}_{lambda_sp_ratio:.0e}.png",
+            bbox_inches="tight",
+        )
 
         # %%
         fig, ax = plt.subplots(1, 1, squeeze=False, figsize=(5, 5))
