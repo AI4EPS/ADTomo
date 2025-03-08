@@ -133,10 +133,12 @@ class Eikonal2D(torch.nn.Module):
         self.xgrid = xgrid
         self.ygrid = ygrid
 
-        # set mini grid
-        self.max_nx_sub = nx
-        self.max_ny_sub = ny
-        self.h_sub = h
+        # set subscale grid for interpolation
+        # TODO: add align for scale_sub != 1
+        self.scale_sub = config["scale_sub"]
+        self.nx_sub = nx // self.scale_sub
+        self.ny_sub = ny // self.scale_sub
+        self.h_sub = h * self.scale_sub
 
     # def interp(self, time_table, x, y):
 
@@ -231,8 +233,8 @@ class Eikonal2D(torch.nn.Module):
             #     ((event_loc[:, 0] - station_loc[0]).abs() < self.max_nx_sub * self.h_sub)
             #     & ((event_loc[:, 1] - station_loc[1]).abs() < self.max_ny_sub * self.h_sub)
             # ]
-            selected = ((event_loc[:, 0] - station_loc[0]).abs() < self.max_nx_sub * self.h_sub) & (
-                (event_loc[:, 1] - station_loc[1]).abs() < self.max_ny_sub * self.h_sub
+            selected = ((event_loc[:, 0] - station_loc[0]).abs() < self.nx_sub * self.h_sub) & (
+                (event_loc[:, 1] - station_loc[1]).abs() < self.ny_sub * self.h_sub
             )
             event_loc = event_loc[selected]
             obs = obs[selected]
@@ -243,7 +245,7 @@ class Eikonal2D(torch.nn.Module):
                         max(event_loc[:, 0].max().item(), station_loc[0].item())
                         - min(event_loc[:, 0].min().item(), station_loc[0].item())
                     )
-                    / self.h_sub
+                    / self.h
                 )
             )
             ny_sub = int(
@@ -252,11 +254,11 @@ class Eikonal2D(torch.nn.Module):
                         max(event_loc[:, 1].max().item(), station_loc[1].item())
                         - min(event_loc[:, 1].min().item(), station_loc[1].item())
                     )
-                    / self.h_sub
+                    / self.h
                 )
             )
-            x1 = int((min(event_loc[:, 0].min().item(), station_loc[0].item()) - self.xgrid[0].min()) // self.h)
-            y1 = int((min(event_loc[:, 1].min().item(), station_loc[1].item()) - self.ygrid[0].min()) // self.h)
+            x1 = int((min(event_loc[:, 0].min().item(), station_loc[0].item()) - self.xgrid[0].item()) // self.h)
+            y1 = int((min(event_loc[:, 1].min().item(), station_loc[1].item()) - self.ygrid[0].item()) // self.h)
 
             # x1 -= 1
             # y1 -= 1
@@ -265,14 +267,25 @@ class Eikonal2D(torch.nn.Module):
             nx_sub += 2
             ny_sub += 2
 
-            ## DEBUG
-            # nx_sub = 27
-            # ny_sub = 57
+            # # ## DEBUG
+            # nx_sub = int(27 * self.scale_sub) + 3
+            # ny_sub = int(57 * self.scale_sub) + 3
             # x1 = int(torch.round((0 - self.xgrid[0]) / self.h).item())
             # y1 = int(torch.round((0 - self.ygrid[0]) / self.h).item())
 
             if phase_type_ == "P":
                 vp_sub = vp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+                if self.h != self.h_sub:
+                    vp_sub = (
+                        F.interpolate(
+                            vp_sub.unsqueeze(0).unsqueeze(0),
+                            scale_factor=self.h / self.h_sub,
+                            mode="bilinear",
+                            align_corners=False,
+                        )
+                        .squeeze(0)
+                        .squeeze(0)
+                    )
                 tp2d = Eikonal2DFunction.apply(
                     1.0 / vp_sub,
                     self.h_sub,
@@ -293,6 +306,17 @@ class Eikonal2D(torch.nn.Module):
 
             elif phase_type_ == "S":
                 vs_sub = vs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+                if self.h != self.h_sub:
+                    vs_sub = (
+                        F.interpolate(
+                            vs_sub.unsqueeze(0).unsqueeze(0),
+                            scale_factor=self.h / self.h_sub,
+                            mode="bilinear",
+                            align_corners=False,
+                        )
+                        .squeeze(0)
+                        .squeeze(0)
+                    )
                 ts2d = Eikonal2DFunction.apply(
                     1.0 / vs_sub,
                     self.h_sub,
@@ -311,19 +335,30 @@ class Eikonal2D(torch.nn.Module):
                 loss += F.mse_loss(pred, obs)
         if self.lambda_dvp > 0:
             dvp_sub = dvp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
-            reg_dvp = F.conv2d(dvp_sub.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            dvp_sub = dvp_sub.unsqueeze(0).unsqueeze(0)
+            if self.h != self.h_sub:
+                dvp_sub = F.interpolate(dvp_sub, scale_factor=self.h / self.h_sub, mode="bilinear", align_corners=False)
+            reg_dvp = F.conv2d(dvp_sub, self.smooth_kernel)
             loss += self.lambda_dvp * reg_dvp.abs().sum()
 
         if self.lambda_dvs > 0:
             dvs_sub = dvs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
-            reg_dvs = F.conv2d(dvs_sub.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            dvs_sub = dvs_sub.unsqueeze(0).unsqueeze(0)
+            if self.h != self.h_sub:
+                dvs_sub = F.interpolate(dvs_sub, scale_factor=self.h / self.h_sub, mode="bilinear", align_corners=False)
+            reg_dvs = F.conv2d(dvs_sub, self.smooth_kernel)
             loss += self.lambda_dvs * reg_dvs.abs().sum()
 
         if self.lambda_sp_ratio > 0:
             vs_sub = vs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
             vp_sub = vp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            vs_sub = vs_sub.unsqueeze(0).unsqueeze(0)
+            vp_sub = vp_sub.unsqueeze(0).unsqueeze(0)
+            if self.h != self.h_sub:
+                vs_sub = F.interpolate(vs_sub, scale_factor=self.h_sub / self.h, mode="bilinear", align_corners=False)
+                vp_sub = F.interpolate(vp_sub, scale_factor=self.h_sub / self.h, mode="bilinear", align_corners=False)
             sp_ratio_sub = vs_sub / vp_sub
-            reg_sp_ratio = F.conv2d(sp_ratio_sub.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            reg_sp_ratio = F.conv2d(sp_ratio_sub, self.smooth_kernel)
             loss += self.lambda_sp_ratio * reg_sp_ratio.abs().sum()
 
         pred_df = pd.DataFrame(

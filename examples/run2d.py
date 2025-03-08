@@ -206,10 +206,14 @@ if __name__ == "__main__":
     num_event = len(events)
     num_station = len(stations)
     nx, ny, h = eikonal_config["nx"], eikonal_config["ny"], eikonal_config["h"]
-    xgrid = torch.arange(-int(nx * 1.5), int(nx * 1.5), dtype=torch.float64) * h
-    ygrid = torch.arange(-int(ny * 1.5), int(ny * 1.5), dtype=torch.float64) * h
+    # xgrid = torch.arange(-int(nx * 1.5), int(nx * 1.5), dtype=torch.float64) * h
+    # ygrid = torch.arange(-int(ny * 1.5), int(ny * 1.5), dtype=torch.float64) * h
+    scale_sub = 1.0
+    h = h / scale_sub
+    xgrid = torch.arange(-int(nx * 2.5), int(nx * 2.5), dtype=torch.float64) * h
+    ygrid = torch.arange(-int(ny * 2.5), int(ny * 2.5), dtype=torch.float64) * h
     nx, ny = xgrid.shape[0], ygrid.shape[0]
-    eikonal_config.update({"xgrid": xgrid, "ygrid": ygrid, "nx": nx, "ny": ny})
+    eikonal_config.update({"xgrid": xgrid, "ygrid": ygrid, "nx": nx, "ny": ny, "h": h, "scale_sub": scale_sub})
 
     vp = torch.ones((nx, ny), dtype=torch.float64) * vp_mean
     vs = torch.ones((nx, ny), dtype=torch.float64) * vs_mean
