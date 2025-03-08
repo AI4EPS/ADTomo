@@ -126,22 +126,54 @@ class Eikonal2D(torch.nn.Module):
 
         # set config
         nx, ny, h = config["nx"], config["ny"], config["h"]
+        xgrid, ygrid = config["xgrid"], config["ygrid"]
         self.nx = nx
         self.ny = ny
         self.h = h
-        self.xgrid = torch.arange(0, nx, dtype=dtype) * h
-        self.ygrid = torch.arange(0, ny, dtype=dtype) * h
+        self.xgrid = xgrid
+        self.ygrid = ygrid
+
+        # set mini grid
+        self.max_nx_sub = nx
+        self.max_ny_sub = ny
+        self.h_sub = h
+
+    # def interp(self, time_table, x, y):
+
+    #     ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, self.nx - 2).long()
+    #     iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, self.ny - 2).long()
+    #     ix1 = ix0 + 1
+    #     iy1 = iy0 + 1
+    #     # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
+    #     # y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
+    #     x = (clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
+    #     y = (clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
+
+    #     ## https://en.wikipedia.org/wiki/Bilinear_interpolation
+
+    #     Q00 = time_table[ix0, iy0]
+    #     Q01 = time_table[ix0, iy1]
+    #     Q10 = time_table[ix1, iy0]
+    #     Q11 = time_table[ix1, iy1]
+
+    #     t = (
+    #         Q00 * (ix1 - x) * (iy1 - y)
+    #         + Q10 * (x - ix0) * (iy1 - y)
+    #         + Q01 * (ix1 - x) * (y - iy0)
+    #         + Q11 * (x - ix0) * (y - iy0)
+    #     )
+
+    #     return t
 
     def interp(self, time_table, x, y):
 
-        ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, self.nx - 2).long()
-        iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, self.ny - 2).long()
+        nx, ny = time_table.shape
+        ix0 = torch.floor(x).clamp(0, nx - 2).long()
+        iy0 = torch.floor(y).clamp(0, ny - 2).long()
         ix1 = ix0 + 1
         iy1 = iy0 + 1
-        # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        # y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        x = (clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        y = (clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
+        x = clamp(x, 0, nx - 1)
+        y = clamp(y, 0, ny - 1)
 
         ## https://en.wikipedia.org/wiki/Bilinear_interpolation
 
@@ -162,7 +194,7 @@ class Eikonal2D(torch.nn.Module):
     def forward(self, picks):
 
         loss = 0
-        pred = []
+        preds = []
         idx = []
 
         if self.max_dvp > 0 or self.max_dvs > 0:
@@ -182,42 +214,122 @@ class Eikonal2D(torch.nn.Module):
             idx_eve_ = torch.tensor(picks_["idx_eve"].values, dtype=torch.int64)
             event_loc = self.event_loc(idx_eve_)
             event_time = self.event_time(idx_eve_)
+            obs = torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze()
+
+            ## Option 1:
+            # nx_sub = int(np.ceil((station_loc[0] - event_loc[:, 0]).abs().max().item() / self.h_sub)) * 2 + 1
+            # ny_sub = int(np.ceil((station_loc[1] - event_loc[:, 1]).abs().max().item() / self.h_sub)) * 2 + 1
+            # x0 = int(torch.round((station_loc[0] - self.xgrid[0]) / self.h).item())
+            # x1 = x0 - nx_sub // 2
+            # y0 = int(torch.round((station_loc[1] - self.ygrid[0]) / self.h).item())
+            # y1 = y0 - ny_sub // 2
+            # x1 = min(max(0, x1), self.nx - nx_sub)
+            # y1 = min(max(0, y1), self.ny - ny_sub)
+
+            ## Option 2:
+            # event_loc = event_loc[
+            #     ((event_loc[:, 0] - station_loc[0]).abs() < self.max_nx_sub * self.h_sub)
+            #     & ((event_loc[:, 1] - station_loc[1]).abs() < self.max_ny_sub * self.h_sub)
+            # ]
+            selected = ((event_loc[:, 0] - station_loc[0]).abs() < self.max_nx_sub * self.h_sub) & (
+                (event_loc[:, 1] - station_loc[1]).abs() < self.max_ny_sub * self.h_sub
+            )
+            event_loc = event_loc[selected]
+            obs = obs[selected]
+
+            nx_sub = int(
+                np.ceil(
+                    (
+                        max(event_loc[:, 0].max().item(), station_loc[0].item())
+                        - min(event_loc[:, 0].min().item(), station_loc[0].item())
+                    )
+                    / self.h_sub
+                )
+            )
+            ny_sub = int(
+                np.ceil(
+                    (
+                        max(event_loc[:, 1].max().item(), station_loc[1].item())
+                        - min(event_loc[:, 1].min().item(), station_loc[1].item())
+                    )
+                    / self.h_sub
+                )
+            )
+            x1 = int((min(event_loc[:, 0].min().item(), station_loc[0].item()) - self.xgrid[0].min()) // self.h)
+            y1 = int((min(event_loc[:, 1].min().item(), station_loc[1].item()) - self.ygrid[0].min()) // self.h)
+
+            # x1 -= 1
+            # y1 -= 1
+            # nx_sub += 3
+            # ny_sub += 3
+            nx_sub += 2
+            ny_sub += 2
+
+            ## DEBUG
+            # nx_sub = 27
+            # ny_sub = 57
+            # x1 = int(torch.round((0 - self.xgrid[0]) / self.h).item())
+            # y1 = int(torch.round((0 - self.ygrid[0]) / self.h).item())
 
             if phase_type_ == "P":
-                tp2d = Eikonal2DFunction.apply(1.0 / vp, self.h, station_loc[0] / self.h, station_loc[1] / self.h)
-                tt = self.interp(tp2d, event_loc[:, 0], event_loc[:, 1])  # travel time
-                at = event_time.squeeze(-1) + tt  # arrival time
+                vp_sub = vp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+                tp2d = Eikonal2DFunction.apply(
+                    1.0 / vp_sub,
+                    self.h_sub,
+                    (station_loc[0] - self.xgrid[0] - x1 * self.h) / self.h_sub,
+                    (station_loc[1] - self.ygrid[0] - y1 * self.h) / self.h_sub,
+                )
+
+                tt = self.interp(
+                    tp2d,
+                    (event_loc[:, 0] - self.xgrid[0] - x1 * self.h) / self.h_sub,
+                    (event_loc[:, 1] - self.ygrid[0] - y1 * self.h) / self.h_sub,
+                )  # travel time
+                pred = event_time.squeeze(-1) + tt  # arrival time
                 # pred.append(tt.detach().numpy())
                 # loss += F.mse_loss(tt, torch.tensor(picks_["travel_time"].values, dtype=self.dtype).squeeze())
-                pred.append(at.detach().numpy())
-                loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
+                preds.append(pred.detach().numpy())
+                loss += F.mse_loss(pred, obs)
 
             elif phase_type_ == "S":
-                ts2d = Eikonal2DFunction.apply(1.0 / vs, self.h, station_loc[0] / self.h, station_loc[1] / self.h)
-                tt = self.interp(ts2d, event_loc[:, 0], event_loc[:, 1])
+                vs_sub = vs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+                ts2d = Eikonal2DFunction.apply(
+                    1.0 / vs_sub,
+                    self.h_sub,
+                    (station_loc[0] - self.xgrid[0] - x1 * self.h) / self.h_sub,
+                    (station_loc[1] - self.ygrid[0] - y1 * self.h) / self.h_sub,
+                )
+                tt = self.interp(
+                    ts2d,
+                    (event_loc[:, 0] - self.xgrid[0] - x1 * self.h) / self.h_sub,
+                    (event_loc[:, 1] - self.ygrid[0] - y1 * self.h) / self.h_sub,
+                )
                 # pred.append(tt.detach().numpy())
                 # loss += F.mse_loss(tt, torch.tensor(picks_["travel_time"].values, dtype=self.dtype).squeeze())
-                at = event_time.squeeze(-1) + tt
-                pred.append(at.detach().numpy())
-                loss += F.mse_loss(at, torch.tensor(picks_["phase_time"].values, dtype=self.dtype).squeeze())
-
+                pred = event_time.squeeze(-1) + tt
+                preds.append(pred.detach().numpy())
+                loss += F.mse_loss(pred, obs)
         if self.lambda_dvp > 0:
-            reg_dvp = F.conv2d(dvp.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            dvp_sub = dvp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            reg_dvp = F.conv2d(dvp_sub.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
             loss += self.lambda_dvp * reg_dvp.abs().sum()
 
         if self.lambda_dvs > 0:
-            reg_dvs = F.conv2d(dvs.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            dvs_sub = dvs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            reg_dvs = F.conv2d(dvs_sub.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
             loss += self.lambda_dvs * reg_dvs.abs().sum()
 
         if self.lambda_sp_ratio > 0:
-            sp_ratio = vs / vp
-            reg_sp_ratio = F.conv2d(sp_ratio.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
+            vs_sub = vs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            vp_sub = vp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            sp_ratio_sub = vs_sub / vp_sub
+            reg_sp_ratio = F.conv2d(sp_ratio_sub.unsqueeze(0).unsqueeze(0), self.smooth_kernel).squeeze(0).squeeze(0)
             loss += self.lambda_sp_ratio * reg_sp_ratio.abs().sum()
 
         pred_df = pd.DataFrame(
             {
                 "index": np.concatenate(idx),
-                "pred_s": np.concatenate(pred),
+                "pred": np.concatenate(preds),
             }
         )
         pred_df = pred_df.sort_values("index", ignore_index=True)

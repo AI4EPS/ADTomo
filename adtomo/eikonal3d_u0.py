@@ -252,7 +252,7 @@ class Eikonal3D(torch.nn.Module):
         pred_df = pd.DataFrame(
             {
                 "index": np.concatenate(idx),
-                "pred_s": np.concatenate(pred),
+                "pred": np.concatenate(pred),
             }
         )
         pred_df = pred_df.sort_values("index", ignore_index=True)
