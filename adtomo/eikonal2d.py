@@ -195,7 +195,7 @@ class Eikonal2D(torch.nn.Module):
 
     def forward(self, picks):
 
-        loss = 0
+        loss = torch.tensor(0.0, dtype=self.dtype)
         preds = []
         idx = []
 
@@ -210,7 +210,6 @@ class Eikonal2D(torch.nn.Module):
 
         ## idx_sta an idx_eve are used internally to ensure continous index
         for (idx_sta_, phase_type_), picks_ in picks.groupby(["idx_sta", "phase_type"]):
-            idx.append(picks_.index)
             station_loc = self.station_loc(torch.tensor(idx_sta_, dtype=torch.int64))
 
             idx_eve_ = torch.tensor(picks_["idx_eve"].values, dtype=torch.int64)
@@ -233,11 +232,26 @@ class Eikonal2D(torch.nn.Module):
             #     ((event_loc[:, 0] - station_loc[0]).abs() < self.max_nx_sub * self.h_sub)
             #     & ((event_loc[:, 1] - station_loc[1]).abs() < self.max_ny_sub * self.h_sub)
             # ]
-            selected = ((event_loc[:, 0] - station_loc[0]).abs() < self.nx_sub * self.h_sub) & (
-                (event_loc[:, 1] - station_loc[1]).abs() < self.ny_sub * self.h_sub
+            if not (
+                (station_loc[0] > self.xgrid[0])
+                and (station_loc[0] < self.xgrid[-1])
+                and (station_loc[1] > self.ygrid[0])
+                and (station_loc[1] < self.ygrid[-1])
+            ):
+                continue
+            selected = (
+                (event_loc[:, 0] > self.xgrid[0])
+                & (event_loc[:, 0] < self.xgrid[-1])
+                & (event_loc[:, 1] > self.ygrid[0])
+                & (event_loc[:, 1] < self.ygrid[-1])
+                & ((event_loc[:, 0] - station_loc[0]).abs() < self.nx_sub * self.h_sub)
+                & ((event_loc[:, 1] - station_loc[1]).abs() < self.ny_sub * self.h_sub)
             )
+            event_time = event_time[selected]
             event_loc = event_loc[selected]
             obs = obs[selected]
+            if len(obs) == 0:
+                continue
 
             nx_sub = int(
                 np.ceil(
@@ -273,6 +287,8 @@ class Eikonal2D(torch.nn.Module):
             # x1 = int(torch.round((0 - self.xgrid[0]) / self.h).item())
             # y1 = int(torch.round((0 - self.ygrid[0]) / self.h).item())
 
+            ## Keep the original index
+            idx.append(picks_.index.values[selected])
             if phase_type_ == "P":
                 vp_sub = vp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
                 if self.h != self.h_sub:
@@ -333,6 +349,7 @@ class Eikonal2D(torch.nn.Module):
                 pred = event_time.squeeze(-1) + tt
                 preds.append(pred.detach().numpy())
                 loss += F.mse_loss(pred, obs)
+
         if self.lambda_dvp > 0:
             dvp_sub = dvp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
             dvp_sub = dvp_sub.unsqueeze(0).unsqueeze(0)
