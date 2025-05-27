@@ -84,6 +84,9 @@ class Eikonal2D(torch.nn.Module):
         lambda_dvp=0.0,
         lambda_dvs=0.0,
         lambda_sp_ratio=0.0,
+        beta_dvp=0.0,
+        beta_dvs=0.0,
+        beta_sp_ratio=0.0,
         config=None,
         dtype=torch.float64,
     ):
@@ -112,6 +115,9 @@ class Eikonal2D(torch.nn.Module):
         self.lambda_dvp = lambda_dvp
         self.lambda_dvs = lambda_dvs
         self.lambda_sp_ratio = lambda_sp_ratio
+        self.beta_dvp = beta_dvp
+        self.beta_dvs = beta_dvs
+        self.beta_sp_ratio = beta_sp_ratio
 
         # self.smooth_kernel = torch.ones([1, 1, 5, 5], dtype=dtype) / (5 * 5)
         # self.smooth_kernel = torch.tensor([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], dtype=dtype).view(1, 1, 3, 3)
@@ -377,6 +383,28 @@ class Eikonal2D(torch.nn.Module):
             sp_ratio_sub = vs_sub / vp_sub
             reg_sp_ratio = F.conv2d(sp_ratio_sub, self.smooth_kernel)
             loss += self.lambda_sp_ratio * reg_sp_ratio.abs().sum()
+
+        if self.beta_dvp > 0:
+            dvp_sub = dvp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            dvp_sub = dvp_sub.unsqueeze(0).unsqueeze(0)
+            if self.h != self.h_sub:
+                dvp_sub = F.interpolate(dvp_sub, scale_factor=self.h / self.h_sub, mode="bilinear", align_corners=False)
+            loss += self.beta_dvp * dvp_sub.abs().sum()
+        if self.beta_dvs > 0:
+            dvs_sub = dvs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            dvs_sub = dvs_sub.unsqueeze(0).unsqueeze(0)
+            if self.h != self.h_sub:
+                dvs_sub = F.interpolate(dvs_sub, scale_factor=self.h / self.h_sub, mode="bilinear", align_corners=False)
+            loss += self.beta_dvs * dvs_sub.abs().sum()
+        if self.beta_sp_ratio > 0:
+            vs_sub = vs[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            vp_sub = vp[x1 : x1 + nx_sub, y1 : y1 + ny_sub]
+            vs_sub = vs_sub.unsqueeze(0).unsqueeze(0)
+            vp_sub = vp_sub.unsqueeze(0).unsqueeze(0)
+            if self.h != self.h_sub:
+                vs_sub = F.interpolate(vs_sub, scale_factor=self.h_sub / self.h, mode="bilinear", align_corners=False)
+            sp_ratio_sub = vs_sub / vp_sub
+            loss += self.beta_sp_ratio * sp_ratio_sub.abs().sum()
 
         pred_df = pd.DataFrame(
             {
