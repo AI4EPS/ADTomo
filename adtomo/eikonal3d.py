@@ -156,7 +156,6 @@ class Eikonal3D(torch.nn.Module):
         self.zgrid = torch.arange(0, nz, dtype=dtype) * h
 
     def interp(self, time_table, x, y, z):
-
         ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, self.nx - 2).long()
         iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, self.ny - 2).long()
         iz0 = torch.floor((z - self.zgrid[0]) / self.h).clamp(0, self.nz - 2).long()
@@ -193,14 +192,13 @@ class Eikonal3D(torch.nn.Module):
         return t
 
     def forward(self, picks):
-
         # %%
         loss = 0
         pred = []
         idx = []
         if self.max_dvp > 0 or self.max_dvs > 0:
-            dvp = torch.tanh(self.dvp) * self.max_dvp
-            dvs = torch.tanh(self.dvs) * self.max_dvs
+            dvp = torch.tanh(self.dvp / self.max_dvp) * self.max_dvp
+            dvs = torch.tanh(self.dvs / self.max_dvs) * self.max_dvs
         else:
             dvp = self.dvp
             dvs = self.dvs
@@ -272,7 +270,6 @@ class Eikonal3D(torch.nn.Module):
 
 # %%
 if __name__ == "__main__":
-
     # %%
     import json
     import os
