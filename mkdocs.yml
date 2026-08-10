@@ -1,0 +1,11 @@
+site_name: "ADTomo"
+site_author: "Weiqiang Zhu"
+docs_dir: docs/
+repo_name: "AI4EPS/ADTomo"
+repo_url: "https://github.com/AI4EPS/ADTomo"
+
+nav:
+    - Overview: README.md
+
+theme:
+  name: "material"
