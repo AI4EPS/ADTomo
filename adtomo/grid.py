@@ -198,7 +198,8 @@ class ForwardGrid2D:
 
     def sample_model(self, model_field, model_depth):
         """Differentiably map a depth-only field onto the section at each node's spherical depth."""
-        return interpolate_1d(model_depth, model_field, self.grid_depth.clamp_min(model_depth[0]))
+        query_depth = self.grid_depth.clamp(min=model_depth[0], max=model_depth[-1])
+        return interpolate_1d(model_depth, model_field, query_depth)
 
     def sample_events(self, traveltime, events_spherical):
         """Bilinearly sample a ``(y, x)`` field at live (possibly trainable) event positions."""

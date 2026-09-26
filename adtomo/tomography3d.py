@@ -32,40 +32,6 @@ def predict_travel_times(model, grid, phase, events_spherical):
     return grid.sample_events(traveltime, events_spherical)
 
 
-def _spherical_geometry(lon, lat, depth):
-    """Return fixed geometry for forward-difference spherical grid points."""
-    dz = depth[1:] - depth[:-1]
-    dphi = torch.deg2rad(lat[1:] - lat[:-1])
-    dlambda = torch.deg2rad(lon[1:] - lon[:-1])
-    radius = R_EARTH - depth[:-1]
-    cos_lat = torch.cos(torch.deg2rad(lat[:-1]))
-    volume = (
-        radius[:, None, None].square()
-        * cos_lat[None, :, None]
-        * dz[:, None, None]
-        * dphi[None, :, None]
-        * dlambda[None, None, :]
-    )
-    return dz, dphi, dlambda, radius, cos_lat, volume
-
-
-def _spherical_smoothness(field, dz, dphi, dlambda, radius, cos_lat, volume):
-    """Volume-averaged squared spherical gradient on forward-difference nodes."""
-    reference = field[:-1, :-1, :-1]
-    grad_depth = (field[1:, :-1, :-1] - reference) / dz[:, None, None]
-    grad_lat = (field[:-1, 1:, :-1] - reference) / (radius[:, None, None] * dphi[None, :, None])
-    grad_lon = (field[:-1, :-1, 1:] - reference) / (
-        radius[:, None, None] * cos_lat[None, :, None] * dlambda[None, None, :]
-    )
-    grad2 = grad_depth.square() + grad_lat.square() + grad_lon.square()
-    return (grad2 * volume).sum() / volume.sum()
-
-
-def smoothness(field, lon, lat, depth):
-    """Volume-averaged squared physical spherical gradient."""
-    return _spherical_smoothness(field, *_spherical_geometry(lon, lat, depth))
-
-
 class Tomography(nn.Module):
     """Arrival-time objective over a 3-D velocity model and trainable event parameters.
 
@@ -91,12 +57,30 @@ class Tomography(nn.Module):
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
         self.huber_delta = huber_delta
-        geometry = _spherical_geometry(model.lon, model.lat, model.depth)
-        for name, value in zip(("dz", "dphi", "dlambda", "radius", "cos_lat", "volume"), geometry):
+        dz = model.depth[1:] - model.depth[:-1]
+        dphi = torch.deg2rad(model.lat[1:] - model.lat[:-1])
+        dlambda = torch.deg2rad(model.lon[1:] - model.lon[:-1])
+        radius = R_EARTH - model.depth[:-1]
+        cos_lat = torch.cos(torch.deg2rad(model.lat[:-1]))
+        volume = (
+            radius[:, None, None].square()
+            * cos_lat[None, :, None]
+            * dz[:, None, None]
+            * dphi[None, :, None]
+            * dlambda[None, None, :]
+        )
+        for name, value in zip(("dz", "dphi", "dlambda", "radius", "cos_lat", "volume"), (dz, dphi, dlambda, radius, cos_lat, volume)):
             self.register_buffer(name, value)
 
     def _smoothness(self, field):
-        return _spherical_smoothness(field, self.dz, self.dphi, self.dlambda, self.radius, self.cos_lat, self.volume)
+        reference = field[:-1, :-1, :-1]
+        grad_depth = (field[1:, :-1, :-1] - reference) / self.dz[:, None, None]
+        grad_lat = (field[:-1, 1:, :-1] - reference) / (self.radius[:, None, None] * self.dphi[None, :, None])
+        grad_lon = (field[:-1, :-1, 1:] - reference) / (
+            self.radius[:, None, None] * self.cos_lat[None, :, None] * self.dlambda[None, None, :]
+        )
+        grad2 = grad_depth.square() + grad_lat.square() + grad_lon.square()
+        return (grad2 * self.volume).sum() / self.volume.sum()
 
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
         """Data loss plus regularization.
@@ -111,7 +95,10 @@ class Tomography(nn.Module):
             for phase, event_indices, observed_phase_dt in phase_groups:
                 travel_time = predict_travel_times(self.model, grid, phase, self.event_loc[event_indices])
                 residuals.append(travel_time + self.event_time_correction[event_indices] - observed_phase_dt)
-        residual = torch.cat(residuals)
+        if residuals:
+            residual = torch.cat(residuals)
+        else:
+            residual = sum(parameter.sum() for parameter in self.parameters()).reshape(1) * 0.0
         if self.huber_delta is None:
             data_sum = residual.square().sum()
         else:

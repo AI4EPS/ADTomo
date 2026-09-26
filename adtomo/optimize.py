@@ -76,8 +76,16 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
         return loss
 
     def data_loss():
+        failed = torch.zeros((), dtype=torch.float64)
         with torch.no_grad():
-            objective()
+            try:
+                objective()
+            except ValueError:
+                failed += 1.0
+        if world_size > 1:
+            dist.all_reduce(failed, op=dist.ReduceOp.MAX)
+        if failed.item():
+            return float("inf")
         data_sum = tomography.data_sum.clone()
         if world_size > 1:
             dist.all_reduce(data_sum, op=dist.ReduceOp.SUM)

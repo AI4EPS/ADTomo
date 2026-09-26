@@ -37,13 +37,6 @@ def predict_travel_times_2d(model, grid, phase, events_spherical):
     return grid.sample_events(traveltime, events_spherical)
 
 
-def smoothness_1d(field, depth):
-    """Depth-averaged squared physical gradient of a depth-only field."""
-    dz = depth[1:] - depth[:-1]
-    gradient = (field[1:] - field[:-1]) / dz
-    return (gradient.square() * dz).sum() / dz.sum()
-
-
 class Tomography2D(nn.Module):
     """Arrival-time objective over a 1-D velocity model and trainable event parameters.
 
@@ -65,6 +58,11 @@ class Tomography2D(nn.Module):
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
         self.huber_delta = huber_delta
+        self.register_buffer("dz", model.depth[1:] - model.depth[:-1])
+
+    def _smoothness(self, field):
+        gradient = (field[1:] - field[:-1]) / self.dz
+        return (gradient.square() * self.dz).sum() / self.dz.sum()
 
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
         residuals = []
@@ -72,7 +70,10 @@ class Tomography2D(nn.Module):
             for phase, event_indices, observed_phase_dt in phase_groups:
                 travel_time = predict_travel_times_2d(self.model, grid, phase, self.event_loc[event_indices])
                 residuals.append(travel_time + self.event_time_correction[event_indices] - observed_phase_dt)
-        residual = torch.cat(residuals)
+        if residuals:
+            residual = torch.cat(residuals)
+        else:
+            residual = sum(parameter.sum() for parameter in self.parameters()).reshape(1) * 0.0
         if self.huber_delta is None:
             data_sum = residual.square().sum()
         else:
@@ -85,7 +86,7 @@ class Tomography2D(nn.Module):
         if self.alpha_vp != 0.0 or self.beta_vp != 0.0:
             dvp = self.model.vp - self.vp0
             if self.beta_vp != 0.0:
-                smooth_vp = smoothness_1d(dvp, self.model.depth)
+                smooth_vp = self._smoothness(dvp)
                 regularization_loss = regularization_loss + self.beta_vp * smooth_vp
             if self.alpha_vp != 0.0:
                 damp_vp = dvp.square().mean()
@@ -93,7 +94,7 @@ class Tomography2D(nn.Module):
         if self.alpha_vs != 0.0 or self.beta_vs != 0.0:
             dvs = self.model.vs - self.vs0
             if self.beta_vs != 0.0:
-                smooth_vs = smoothness_1d(dvs, self.model.depth)
+                smooth_vs = self._smoothness(dvs)
                 regularization_loss = regularization_loss + self.beta_vs * smooth_vs
             if self.alpha_vs != 0.0:
                 damp_vs = dvs.square().mean()

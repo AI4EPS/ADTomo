@@ -25,13 +25,11 @@ cd examples
 bash run_pipeline.sh
 ```
 
-## Run the validation scripts
+## Run the gradient validation
 
-Run the test scripts from the `tests` directory:
+Run the retained Eikonal backward check from the `tests` directory:
 
 ```bash
 cd ../tests
-python test_eikonal.py
-python test_grid.py
 python test_gradient.py
 ```
