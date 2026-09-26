@@ -105,32 +105,19 @@ class Tomography(nn.Module):
             absolute = residual.abs()
             data_sum = torch.where(absolute <= self.huber_delta, residual.square(), self.huber_delta * (2.0 * absolute - self.huber_delta)).sum()
         data_loss = data_sum / residual.numel() if data_scale is None else data_scale * data_sum
-        zero = data_loss.new_zeros(())
-        smooth_vp = smooth_vs = damp_vp = damp_vs = zero
-        regularization_loss = zero
+        regularization_loss = data_loss.new_zeros(())
         if self.alpha_vp != 0.0 or self.beta_vp != 0.0:
             dvp = self.model.vp - self.vp0
             if self.beta_vp != 0.0:
-                smooth_vp = self._smoothness(dvp)
-                regularization_loss = regularization_loss + self.beta_vp * smooth_vp
+                regularization_loss = regularization_loss + self.beta_vp * self._smoothness(dvp)
             if self.alpha_vp != 0.0:
-                damp_vp = dvp.square().mean()
-                regularization_loss = regularization_loss + self.alpha_vp * damp_vp
+                regularization_loss = regularization_loss + self.alpha_vp * dvp.square().mean()
         if self.alpha_vs != 0.0 or self.beta_vs != 0.0:
             dvs = self.model.vs - self.vs0
             if self.beta_vs != 0.0:
-                smooth_vs = self._smoothness(dvs)
-                regularization_loss = regularization_loss + self.beta_vs * smooth_vs
+                regularization_loss = regularization_loss + self.beta_vs * self._smoothness(dvs)
             if self.alpha_vs != 0.0:
-                damp_vs = dvs.square().mean()
-                regularization_loss = regularization_loss + self.alpha_vs * damp_vs
+                regularization_loss = regularization_loss + self.alpha_vs * dvs.square().mean()
         loss = data_loss + regularization_scale * regularization_loss
         self.data_sum = data_sum.detach()
-        self.data_loss = data_loss.detach()
-        self.smooth_vp = smooth_vp.detach()
-        self.smooth_vs = smooth_vs.detach()
-        self.damp_vp = damp_vp.detach()
-        self.damp_vs = damp_vs.detach()
-        self.regularization_loss = regularization_loss.detach()
-        self.total_loss = loss.detach()
         return loss

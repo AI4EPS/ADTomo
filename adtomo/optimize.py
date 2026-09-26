@@ -33,10 +33,9 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
     """Minimize ``tomography(groups)`` with L-BFGS or Adam; returns the data loss after every iteration.
 
     Under ``torchrun`` each rank passes its own station ``groups``; gradients
-    and the loss are summed across ranks inside the closure, which is correct
-    for both the dense velocity field and the sparse per-event parameters. An
-    event that a line-search probe moves outside its fixed forward grid gives
-    a large loss so the search backtracks.
+    and the loss are summed across ranks inside the closure. Forward-grid
+    padding is fixed by the caller, so an event leaving the grid propagates
+    the existing ``ValueError``.
     """
     world_size = dist.get_world_size() if dist.is_initialized() else 1
     rank = dist.get_rank() if dist.is_initialized() else 0
@@ -54,18 +53,8 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
 
     def closure():
         optimizer.zero_grad()
-        failed = torch.zeros((), dtype=torch.float64)
-        try:
-            loss = objective()
-            loss.backward()
-        except ValueError:
-            failed += 1.0
-        if world_size > 1:
-            dist.all_reduce(failed, op=dist.ReduceOp.MAX)
-        if failed.item():
-            for parameter in parameters:  # identical optimizer state on every rank
-                parameter.grad = torch.zeros_like(parameter)
-            return torch.full((), 1e6, dtype=torch.float64)
+        loss = objective()
+        loss.backward()
         loss = loss.detach().clone()
         if world_size > 1:
             for parameter in parameters:
@@ -76,16 +65,8 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
         return loss
 
     def data_loss():
-        failed = torch.zeros((), dtype=torch.float64)
         with torch.no_grad():
-            try:
-                objective()
-            except ValueError:
-                failed += 1.0
-        if world_size > 1:
-            dist.all_reduce(failed, op=dist.ReduceOp.MAX)
-        if failed.item():
-            return float("inf")
+            objective()
         data_sum = tomography.data_sum.clone()
         if world_size > 1:
             dist.all_reduce(data_sum, op=dist.ReduceOp.SUM)
