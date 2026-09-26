@@ -153,7 +153,6 @@ def test_regularization_weights_skip_unrequested_terms():
     smooth_groups = make_groups(smooth_model)
     smooth_only = Tomography(smooth_model, EVENTS, beta_vp=1.0)
     perturb(smooth_model)
-    smooth_only._damping = lambda field: (_ for _ in ()).throw(AssertionError("damping was evaluated"))
     smooth_only(smooth_groups)
     assert smooth_only.smooth_vp.item() > 0.0
     assert smooth_only.damp_vp.item() == 0.0
@@ -172,7 +171,6 @@ def test_regularization_weights_skip_unrequested_terms():
     unregularized = Tomography(unregularized_model, EVENTS)
     perturb(unregularized_model)
     unregularized._smoothness = lambda field: (_ for _ in ()).throw(AssertionError("smoothing was evaluated"))
-    unregularized._damping = lambda field: (_ for _ in ()).throw(AssertionError("damping was evaluated"))
     loss = unregularized(unregularized_groups)
     assert unregularized.regularization_loss.item() == 0.0
     assert unregularized.smooth_vp.item() == 0.0 and unregularized.smooth_vs.item() == 0.0

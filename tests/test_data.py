@@ -55,6 +55,17 @@ def test_station_groups_share_observations_between_1d_and_3d():
     assert torch.equal(phases_b[0][1], torch.tensor([1])) and torch.allclose(phases_b[0][2], torch.tensor([5.5], dtype=torch.float64))
 
 
+def test_unknown_event_id_is_rejected():
+    picks = PICKS.copy()
+    picks.loc[0, "event_id"] = "missing"
+    try:
+        build_station_groups(STATIONS, EVENTS, picks, make_model_3d(), "3d", spacing=5.0)
+    except ValueError as error:
+        assert "unknown event_id" in str(error) and "missing" in str(error)
+    else:
+        raise AssertionError("an unknown event_id must not select the last catalog event")
+
+
 def test_set_trainable_toggles_every_parameter_in_both_modes():
     model_3d = make_model_3d()
     event_loc = EVENTS[["longitude", "latitude", "depth_km"]].to_numpy()

@@ -47,22 +47,10 @@ def main():
     parser.add_argument("--location-noise-km", type=float, default=0.0, help="std of Gaussian noise on initial horizontal position and depth")
     parser.add_argument("--time-noise-s", type=float, default=0.0, help="std of Gaussian noise on initial origin time")
     args = parser.parse_args()
-    if args.num_events < 1:
-        raise ValueError("num-events must be positive")
-    if args.location_noise_km < 0 or args.time_noise_s < 0:
-        raise ValueError("noise levels must be non-negative")
 
     model_path, stations_path = DATA / "model_initial.pt", DATA / "stations.csv"
-    if not model_path.is_file() or not stations_path.is_file():
-        raise FileNotFoundError("run 00_gen_velocity.py and 01_gen_stations.py first")
     model = torch.load(model_path, weights_only=True)
     stations = pd.read_csv(stations_path, dtype={"station_id": str})
-    if not (model["lon"][0] < args.lon_min < args.lon_max < model["lon"][-1]):
-        raise ValueError("event longitude region must lie strictly inside the velocity model")
-    if not (model["lat"][0] < args.lat_min < args.lat_max < model["lat"][-1]):
-        raise ValueError("event latitude region must lie strictly inside the velocity model")
-    if not (model["depth"][0] < args.depth_min < args.depth_max < model["depth"][-1]):
-        raise ValueError("event depth region must lie strictly inside the velocity model")
 
     rng = np.random.default_rng(args.seed)
     origin = pd.Timestamp("2026-09-13T12:00:00.000")

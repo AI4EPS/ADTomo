@@ -13,7 +13,6 @@ import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import torch
 import torch.distributed as dist
@@ -32,7 +31,6 @@ from adtomo import (
 
 
 ROOT = Path(__file__).resolve().parent
-KM_PER_DEGREE = 111.19
 
 
 def parse_args():
@@ -48,8 +46,8 @@ def parse_args():
     parser.add_argument("--beta-vs", type=float, default=0.0)
     parser.add_argument("--alpha-vp", type=float, default=0.0)
     parser.add_argument("--alpha-vs", type=float, default=0.0)
+    parser.add_argument("--huber-delta", type=float, default=None, help="seconds; omit for squared-error loss")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
-    parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
     parser.add_argument("--figures-dir", type=Path, default=ROOT / "figures")
     args = parser.parse_args()
     args.trainable = args.trainable.split(",")
@@ -79,24 +77,6 @@ def inverted_catalog(events_initial, tomography):
     ]
     catalog["dt0_s"] = correction
     return catalog
-
-
-def horizontal_error_km(catalog, truth):
-    dlon = (catalog.longitude.to_numpy() - truth.longitude.to_numpy()) * np.cos(np.deg2rad(truth.latitude.to_numpy()))
-    return KM_PER_DEGREE * np.hypot(dlon, catalog.latitude.to_numpy() - truth.latitude.to_numpy())
-
-
-def print_summary(true_model, initial_model, model, events, events_initial, inverted):
-    for phase in ("vp", "vs"):
-        truth = getattr(true_model, phase).detach()
-        print(
-            f"{phase.upper()} mean |error|: initial={(getattr(initial_model, phase).detach() - truth).abs().mean():.4f} "
-            f"recovered={(getattr(model, phase).detach() - truth).abs().mean():.4f} km/s"
-        )
-    time_error = lambda catalog: (pd.to_datetime(catalog.event_time) - pd.to_datetime(events.event_time)).dt.total_seconds().abs().mean()
-    print(f"event horizontal error (km): initial={horizontal_error_km(events_initial, events).mean():.3f} recovered={horizontal_error_km(inverted, events).mean():.3f}")
-    print(f"event depth error (km): initial={(events_initial.depth_km - events.depth_km).abs().mean():.3f} recovered={(inverted.depth_km - events.depth_km).abs().mean():.3f}")
-    print(f"origin-time error (s): initial={time_error(events_initial):.3f} recovered={time_error(inverted):.3f}")
 
 
 def plot_velocity(true_model, initial_model, model, path):
@@ -130,7 +110,7 @@ def plot_velocity(true_model, initial_model, model, path):
 def plot_events(events, events_initial, inverted, history, path):
     figure, axes = plt.subplots(1, 3, figsize=(16, 5), constrained_layout=True)
     axes[0].semilogy(history, "o-", color="tab:blue")
-    axes[0].set(title="Data misfit", xlabel="iteration", ylabel="phase-time MSE (s²)")
+    axes[0].set(title="Data loss", xlabel="iteration", ylabel="data loss")
     axes[0].grid(alpha=0.3)
     axes[1].scatter(events.longitude, events.latitude, marker="*", s=60, color="k", label="true")
     axes[1].scatter(events_initial.longitude, events_initial.latitude, marker="x", color="tab:gray", label="initial")
@@ -153,18 +133,24 @@ def main():
     try:
         initial, true, stations, events, events_initial, picks = load_data(args.data_dir)
         event_loc = events_initial[["longitude", "latitude", "depth_km"]].to_numpy()
-        regularization = (args.beta_vp, args.beta_vs, args.alpha_vp, args.alpha_vs)
+        objective_options = {
+            "beta_vp": args.beta_vp,
+            "beta_vs": args.beta_vs,
+            "alpha_vp": args.alpha_vp,
+            "alpha_vs": args.alpha_vs,
+            "huber_delta": args.huber_delta,
+        }
 
         if args.model == "1d":
             model = VelocityModel1D.from_3d(VelocityModel(**initial))
             initial_model = VelocityModel1D.from_3d(VelocityModel(**initial), trainable=False)
             true_model = VelocityModel1D.from_3d(VelocityModel(**true), trainable=False)
-            tomography = Tomography2D(model, event_loc, *regularization)
+            tomography = Tomography2D(model, event_loc, **objective_options)
         else:
             model = VelocityModel(**initial)
             initial_model = VelocityModel(**initial, trainable=False)
             true_model = VelocityModel(**true, trainable=False)
-            tomography = Tomography(model, event_loc, *regularization)
+            tomography = Tomography(model, event_loc, **objective_options)
 
         parameters = set_trainable(tomography, args.trainable)
         groups = build_station_groups(
@@ -178,17 +164,11 @@ def main():
         history = optimize(tomography, groups, parameters, len(picks), args.optimizer, args.iterations, args.learning_rate)
 
         if rank == 0:
-            args.results_dir.mkdir(exist_ok=True)
             args.figures_dir.mkdir(exist_ok=True)
             inverted = inverted_catalog(events_initial, tomography)
-            saved = {name: buffer for name, buffer in model.named_buffers()}
-            saved.update({"vp": model.vp.detach(), "vs": model.vs.detach(), "loss_history": history})
-            torch.save(saved, args.results_dir / "model_inverted.pt")
-            inverted.to_csv(args.results_dir / "events_inverted.csv", index=False)
             plot_velocity(true_model, initial_model, model, args.figures_dir / "inversion.png")
             plot_events(events, events_initial, inverted, history, args.figures_dir / "events.png")
-            print_summary(true_model, initial_model, model, events, events_initial, inverted)
-            print(f"saved results to {args.results_dir} and figures to {args.figures_dir}; misfit {history[0]:.3e} -> {history[-1]:.3e}")
+            print(f"saved figures to {args.figures_dir}; data loss {history[0]:.3e} -> {history[-1]:.3e}")
         if world_size > 1:
             dist.barrier()
     finally:

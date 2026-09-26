@@ -110,8 +110,7 @@ class Tomography(nn.Module):
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
         self.huber_delta = huber_delta
-        self._uses_smoothness = beta_vp != 0.0 or beta_vs != 0.0
-        if self._uses_smoothness:
+        if beta_vp != 0.0 or beta_vs != 0.0:
             geometry = _spherical_geometry(model.lon, model.lat, model.depth)
         else:
             geometry = (None, None, None, None, None, None)
@@ -123,12 +122,8 @@ class Tomography(nn.Module):
             field, self.dz, self.dphi, self.dlambda, self.radius, self.cos_lat, self.cell_volume
         )
 
-    @staticmethod
-    def _damping(field):
-        return field.square().mean()
-
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
-        """Data misfit plus regularization.
+        """Data loss plus regularization.
 
         ``data_scale`` replaces the mean over residuals (use ``1 /
         total_observations`` when gradients are summed over ranks, with
@@ -156,7 +151,7 @@ class Tomography(nn.Module):
                 smooth_vp = self._smoothness(dvp)
                 regularization_loss = regularization_loss + self.beta_vp * smooth_vp
             if self.alpha_vp != 0.0:
-                damp_vp = self._damping(dvp)
+                damp_vp = dvp.square().mean()
                 regularization_loss = regularization_loss + self.alpha_vp * damp_vp
         if self.alpha_vs != 0.0 or self.beta_vs != 0.0:
             dvs = self.model.vs - self.vs0
@@ -164,7 +159,7 @@ class Tomography(nn.Module):
                 smooth_vs = self._smoothness(dvs)
                 regularization_loss = regularization_loss + self.beta_vs * smooth_vs
             if self.alpha_vs != 0.0:
-                damp_vs = self._damping(dvs)
+                damp_vs = dvs.square().mean()
                 regularization_loss = regularization_loss + self.alpha_vs * damp_vs
         loss = data_loss + regularization_scale * regularization_loss
         self.data_sum = data_sum.detach()

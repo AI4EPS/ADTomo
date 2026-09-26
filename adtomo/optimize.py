@@ -30,7 +30,7 @@ def set_trainable(tomography, names):
 
 
 def optimize(tomography, groups, parameters, total_observations, optimizer="lbfgs", iterations=30, learning_rate=None, log=print):
-    """Minimize ``tomography(groups)`` with L-BFGS or Adam; returns the data misfit after every iteration.
+    """Minimize ``tomography(groups)`` with L-BFGS or Adam; returns the data loss after every iteration.
 
     Under ``torchrun`` each rank passes its own station ``groups``; gradients
     and the loss are summed across ranks inside the closure, which is correct
@@ -92,5 +92,5 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
             optimizer.step()
         history.append(data_loss())
         if rank == 0 and log is not None and (iteration % max(1, iterations // 10) == 0 or iteration == iterations - 1):
-            log(f"iteration {iteration + 1:03d}/{iterations} data={history[-1]:.6e} (RMS {history[-1] ** 0.5:.3f} s)")
+            log(f"iteration {iteration + 1:03d}/{iterations} data={history[-1]:.6e}")
     return history

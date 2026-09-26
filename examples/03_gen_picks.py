@@ -19,9 +19,6 @@ def main():
     parser.add_argument("--spacing", type=float, default=2.0, help="forward-grid spacing in km")
     args = parser.parse_args()
 
-    required = [DATA / name for name in ("model_true.pt", "stations.csv", "events.csv")]
-    if any(not path.is_file() for path in required):
-        raise FileNotFoundError("run 00_gen_velocity.py, 01_gen_stations.py, and 02_gen_events.py first")
     started = perf_counter()
     model = VelocityModel(**torch.load(DATA / "model_true.pt", weights_only=True), trainable=False)
     stations = pd.read_csv(DATA / "stations.csv", dtype={"station_id": str})

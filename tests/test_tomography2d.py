@@ -2,7 +2,7 @@
 
 import torch
 
-from adtomo import ForwardGrid2D, Tomography2D, VelocityModel1D, predict_travel_times_2d
+from adtomo import ForwardGrid2D, Tomography2D, VelocityModel1D, predict_travel_times_2d, smoothness_1d
 
 
 DEPTH = torch.arange(-5.0, 20.1, 1.0, dtype=torch.float64)
@@ -18,6 +18,15 @@ STATIONS = torch.tensor(
 )
 EVENTS = torch.tensor([[-122.79, 38.81, 6.0], [-122.81, 38.82, 4.0]], dtype=torch.float64)
 SPACING = 0.5
+
+
+def test_smoothness_uses_physical_interval_lengths():
+    depth = torch.tensor([0.0, 1.0, 4.0], dtype=torch.float64)
+    field = torch.tensor([0.0, 2.0, 5.0], dtype=torch.float64)
+    dz = depth[1:] - depth[:-1]
+    gradient = (field[1:] - field[:-1]) / dz
+    expected = (gradient.square() * dz).sum() / dz.sum()
+    assert torch.allclose(smoothness_1d(field, depth), expected)
 
 
 def true_model():

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import torch
 
 
 ROOT = Path(__file__).resolve().parent
@@ -21,17 +20,6 @@ def main():
     parser.add_argument("--lat-min", type=float, default=33.8)
     parser.add_argument("--lat-max", type=float, default=36.1)
     args = parser.parse_args()
-    if args.num_stations < 1:
-        raise ValueError("num-stations must be positive")
-
-    model_path = DATA / "model_initial.pt"
-    if not model_path.is_file():
-        raise FileNotFoundError(f"missing {model_path}; run 00_gen_velocity.py first")
-    model = torch.load(model_path, weights_only=True)
-    if not (model["lon"][0] < args.lon_min < args.lon_max < model["lon"][-1]):
-        raise ValueError("station longitude region must lie strictly inside the velocity model")
-    if not (model["lat"][0] < args.lat_min < args.lat_max < model["lat"][-1]):
-        raise ValueError("station latitude region must lie strictly inside the velocity model")
 
     rng = np.random.default_rng(args.seed)
     stations = pd.DataFrame({

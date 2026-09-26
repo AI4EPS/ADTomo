@@ -26,7 +26,7 @@ setup(
     ],
     cmdclass={"build_ext": BuildExtension.with_options(no_cuda=True)},
     install_requires=[
-        "torch",
+        "torch>=2.10",
     ],
     python_requires=">=3.9",
 )

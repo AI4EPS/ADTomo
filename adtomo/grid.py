@@ -189,10 +189,6 @@ class ForwardGrid2D:
         y, x = torch.meshgrid(self.y, self.x, indexing="ij")
         local = torch.stack([x, torch.zeros_like(x), y], dim=-1)
         _, _, self.grid_depth = ecef_to_spherical(local_to_ecef(local, self.station_ecef, self.basis))
-        if self.grid_depth.max() > model.depth[-1]:
-            raise ValueError(
-                f"2-D forward grid reaches {self.grid_depth.max().item():.3f} km depth, but the 1-D model ends at {model.depth[-1].item():.3f} km"
-            )
 
     def to_section(self, events_spherical):
         """Event lon/lat/depth to ``(sqrt(E^2 + N^2), D)`` in this station's section."""

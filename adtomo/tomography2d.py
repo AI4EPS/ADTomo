@@ -38,8 +38,10 @@ def predict_travel_times_2d(model, grid, phase, events_spherical):
 
 
 def smoothness_1d(field, depth):
-    """Mean squared physical depth gradient of a depth-only field."""
-    return ((field[1:] - field[:-1]) / (depth[1:] - depth[:-1])).square().mean()
+    """Depth-averaged squared physical gradient of a depth-only field."""
+    dz = depth[1:] - depth[:-1]
+    gradient = (field[1:] - field[:-1]) / dz
+    return (gradient.square() * dz).sum() / dz.sum()
 
 
 class Tomography2D(nn.Module):

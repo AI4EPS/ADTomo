@@ -4,12 +4,6 @@ from .grid import (
     ForwardGrid2D,
     VelocityModel,
     VelocityModel1D,
-    ecef_to_local,
-    ecef_to_spherical,
-    interpolate_1d,
-    local_basis,
-    local_to_ecef,
-    spherical_to_ecef,
 )
 from .optimize import TRAINABLE, init_distributed, optimize, set_trainable
 from .tomography2d import Tomography2D, predict_travel_times_2d, smoothness_1d
