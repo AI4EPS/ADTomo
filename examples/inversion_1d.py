@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--spacing-km", type=float, default=1.0)
     parser.add_argument("--grid-padding-km", type=float, default=20.0)
     parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--trainable", default="vp,vs")
     parser.add_argument("--vp-initial-km-s", type=float, default=5.5)
     parser.add_argument("--vs-initial-km-s", type=float, default=3.2)
     parser.add_argument("--alpha-vp", type=float, default=0.0)
@@ -62,7 +63,8 @@ def main():
             alpha_vp=args.alpha_vp,
             alpha_vs=args.alpha_vs,
         )
-        set_trainable(tomography, ["vp", "vs"])
+        trainable = args.trainable.split(",")
+        parameters = set_trainable(tomography, trainable)
         groups = build_station_groups(
             stations,
             events_initial,
@@ -75,7 +77,9 @@ def main():
             rank=rank,
             world_size=world_size,
         )
-        history = optimize(tomography, groups, [model.vp, model.vs], len(picks), "lbfgs", args.iterations)
+        if rank == 0:
+            print(f"trainable: {', '.join(trainable)}")
+        history = optimize(tomography, groups, parameters, len(picks), "lbfgs", args.iterations)
 
         if rank == 0:
             args.figures_dir.mkdir(parents=True, exist_ok=True)

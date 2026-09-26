@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NPROC=1
+TRAINABLE="vp,vs"
 SPACING_KM=1.0
 GRID_PADDING_KM=20.0
 ITERATIONS=20
@@ -18,6 +19,7 @@ ARGS=(
     --spacing-km "$SPACING_KM"
     --grid-padding-km "$GRID_PADDING_KM"
     --iterations "$ITERATIONS"
+    --trainable "$TRAINABLE"
     --vp-initial-km-s "$VP_INITIAL_KM_S"
     --vs-initial-km-s "$VS_INITIAL_KM_S"
     --alpha-vp "$ALPHA_VP"

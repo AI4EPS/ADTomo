@@ -50,7 +50,10 @@ bash run_inversion_3d.sh
 with a fixed 1-D model, and `run_inversion_3d.sh` jointly inverts 3-D Vp/Vs,
 event locations, and origin times. Edit each shell file's `SPACING_KM` and
 `GRID_PADDING_KM` values (km), iteration count, and local alpha/beta
-regularization settings before running.
+regularization settings before running. Select the optimized parameters in
+the same files with `TRAINABLE`, for example
+`TRAINABLE="vp,vs,event_loc,event_time"`. The shell setting is passed to the
+Python example and then directly to the optimizer.
 
 ## Run the gradient validation
 

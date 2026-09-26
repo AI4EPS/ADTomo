@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--spacing-km", type=float, default=1.0)
     parser.add_argument("--grid-padding-km", type=float, default=20.0)
     parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--trainable", default="event_loc,event_time")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
     parser.add_argument("--figures-dir", type=Path, default=ROOT / "figures")
     args = parser.parse_args()
@@ -36,7 +37,8 @@ def main():
         model = VelocityModel1D.from_3d(VelocityModel(**initial), trainable=False)
         event_loc = events_initial[["longitude", "latitude", "depth_km"]].to_numpy()
         tomography = Tomography2D(model, event_loc)
-        set_trainable(tomography, ["event_loc", "event_time"])
+        trainable = args.trainable.split(",")
+        parameters = set_trainable(tomography, trainable)
         groups = build_station_groups(
             stations,
             events_initial,
@@ -49,10 +51,12 @@ def main():
             rank=rank,
             world_size=world_size,
         )
+        if rank == 0:
+            print(f"trainable: {', '.join(trainable)}")
         history = optimize(
             tomography,
             groups,
-            [tomography.event_loc, tomography.event_time_correction],
+            parameters,
             len(picks),
             "lbfgs",
             args.iterations,

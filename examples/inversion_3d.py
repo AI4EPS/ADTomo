@@ -19,6 +19,7 @@ def main():
     parser.add_argument("--spacing-km", type=float, default=2.0)
     parser.add_argument("--grid-padding-km", type=float, default=20.0)
     parser.add_argument("--iterations", type=int, default=30)
+    parser.add_argument("--trainable", default="vp,vs,event_loc,event_time")
     parser.add_argument("--alpha-vp", type=float, default=0.0)
     parser.add_argument("--alpha-vs", type=float, default=0.0)
     parser.add_argument("--beta-vp", type=float, default=0.0)
@@ -49,7 +50,8 @@ def main():
             alpha_vp=args.alpha_vp,
             alpha_vs=args.alpha_vs,
         )
-        set_trainable(tomography, ["vp", "vs", "event_loc", "event_time"])
+        trainable = args.trainable.split(",")
+        parameters = set_trainable(tomography, trainable)
         groups = build_station_groups(
             stations,
             events_initial,
@@ -62,10 +64,12 @@ def main():
             rank=rank,
             world_size=world_size,
         )
+        if rank == 0:
+            print(f"trainable: {', '.join(trainable)}")
         history = optimize(
             tomography,
             groups,
-            [model.vp, model.vs, tomography.event_loc, tomography.event_time_correction],
+            parameters,
             len(picks),
             "lbfgs",
             args.iterations,
@@ -80,19 +84,23 @@ def main():
                 recovered = getattr(model, phase).detach()[depth_index]
                 if true_model is not None:
                     initial_field = initial[phase][depth_index]
-                    field = (recovered - initial_field) / initial_field
+                    recovered_perturbation = (recovered - initial_field) / initial_field
+                    true_perturbation = (getattr(true_model, phase).detach()[depth_index] - initial_field) / initial_field
                     title = "recovered perturbation"
-                    limit = max(field.abs().max().item(), 1e-6)
+                    limit = max(
+                        recovered_perturbation.abs().max().item(),
+                        true_perturbation.abs().max().item(),
+                        1e-6,
+                    )
                 else:
-                    field = recovered
+                    recovered_perturbation = recovered
                     title = "recovered velocity"
                     limit = None
-                image = axes[row, 0].imshow(field, origin="lower", extent=extent, cmap="seismic" if true_model is not None else "viridis", vmin=-limit if limit is not None else None, vmax=limit if limit is not None else None)
+                image = axes[row, 0].imshow(recovered_perturbation, origin="lower", extent=extent, cmap="seismic" if true_model is not None else "viridis", vmin=-limit if limit is not None else None, vmax=limit if limit is not None else None)
                 axes[row, 0].set(title=f"{phase.upper()} {title}", xlabel="longitude (deg)", ylabel="latitude (deg)")
                 figure.colorbar(image, ax=axes[row, 0], label="relative velocity" if true_model is not None else "velocity (km/s)")
                 if true_model is not None:
-                    truth = (getattr(true_model, phase).detach()[depth_index] - initial[phase][depth_index]) / initial[phase][depth_index]
-                    image = axes[row, 1].imshow(truth, origin="lower", extent=extent, cmap="seismic", vmin=-limit, vmax=limit)
+                    image = axes[row, 1].imshow(true_perturbation, origin="lower", extent=extent, cmap="seismic", vmin=-limit, vmax=limit)
                     axes[row, 1].set(title=f"{phase.upper()} true perturbation", xlabel="longitude (deg)", ylabel="latitude (deg)")
                     figure.colorbar(image, ax=axes[row, 1], label="relative velocity")
                 else:
