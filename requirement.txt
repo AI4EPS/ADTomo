@@ -1,9 +1,4 @@
-# Python >= 3.9 recommended
-# conda create -n adtomo_hz python=3.9 -y
-# pip install -r requirement.txt
-# python setup.py build_ext --inplace
-
-torch>=2.0
+torch>=2.10
 numpy>=1.24
 pandas>=2.0
 matplotlib>=3.7
