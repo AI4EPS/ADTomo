@@ -33,3 +33,6 @@ Run the retained Eikonal backward check from the `tests` directory:
 cd ../tests
 python test_gradient.py
 ```
+
+The script saves `tests/figures/gradient_test.png` and displays the two
+Taylor-convergence panels when an interactive Matplotlib backend is available.

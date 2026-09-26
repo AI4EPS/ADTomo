@@ -73,6 +73,7 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
         return (data_sum / total_observations).item()
 
     history = [data_loss()]
+    log_interval = max(1, iterations // 10)
     for iteration in range(iterations):
         if isinstance(optimizer, torch.optim.LBFGS):
             optimizer.step(closure)
@@ -80,6 +81,6 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
             closure()
             optimizer.step()
         history.append(data_loss())
-        if rank == 0 and log is not None and (iteration % max(1, iterations // 10) == 0 or iteration == iterations - 1):
+        if rank == 0 and log is not None and ((iteration + 1) % log_interval == 0 or iteration == iterations - 1):
             log(f"iteration {iteration + 1:03d}/{iterations} data={history[-1]:.6e}")
     return history
