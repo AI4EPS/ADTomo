@@ -44,8 +44,8 @@ def parse_args():
     parser.add_argument("--learning-rate", type=float, default=None, help="default 1.0 for lbfgs, 0.01 for adam")
     parser.add_argument("--spacing", type=float, default=None, help="forward-grid spacing in km (default 4 for 3d, 2 for 1d)")
     parser.add_argument("--grid-padding", type=float, default=10.0, help="km around (and above) the initial events so relocated events stay inside the fixed grids")
-    parser.add_argument("--lambda-vp", type=float, default=0.0)
-    parser.add_argument("--lambda-vs", type=float, default=0.0)
+    parser.add_argument("--beta-vp", type=float, default=0.0)
+    parser.add_argument("--beta-vs", type=float, default=0.0)
     parser.add_argument("--alpha-vp", type=float, default=0.0)
     parser.add_argument("--alpha-vs", type=float, default=0.0)
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
@@ -153,7 +153,7 @@ def main():
     try:
         initial, true, stations, events, events_initial, picks = load_data(args.data_dir)
         event_loc = events_initial[["longitude", "latitude", "depth_km"]].to_numpy()
-        regularization = (args.lambda_vp, args.lambda_vs, args.alpha_vp, args.alpha_vs)
+        regularization = (args.beta_vp, args.beta_vs, args.alpha_vp, args.alpha_vs)
 
         if args.model == "1d":
             model = VelocityModel1D.from_3d(VelocityModel(**initial))

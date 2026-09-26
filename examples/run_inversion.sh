@@ -15,8 +15,8 @@ NPROC="${NPROC:-1}"
 TRAINABLE="${TRAINABLE:-vp,vs}"            # subset of vp,vs,event_loc,event_time
 OPTIMIZER="${OPTIMIZER:-lbfgs}"            # lbfgs | adam
 ITERATIONS="${ITERATIONS:-30}"
-LAMBDA_VP="${LAMBDA_VP:-0.0}"
-LAMBDA_VS="${LAMBDA_VS:-0.0}"
+BETA_VP="${BETA_VP:-0.0}"
+BETA_VS="${BETA_VS:-0.0}"
 ALPHA_VP="${ALPHA_VP:-0.0}"
 ALPHA_VS="${ALPHA_VS:-0.0}"
 
@@ -25,8 +25,8 @@ ARGS=(
     --trainable "$TRAINABLE"
     --optimizer "$OPTIMIZER"
     --iterations "$ITERATIONS"
-    --lambda-vp "$LAMBDA_VP"
-    --lambda-vs "$LAMBDA_VS"
+    --beta-vp "$BETA_VP"
+    --beta-vs "$BETA_VS"
     --alpha-vp "$ALPHA_VP"
     --alpha-vs "$ALPHA_VS"
 )

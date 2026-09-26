@@ -120,3 +120,24 @@ def test_location_only_recovers_perturbed_events():
     assert torch.all(recovered_offset < initial_offset / 100)
     assert torch.all((tomography.event_loc.detach()[:, 2] - EVENTS[:, 2]).abs() < 1e-3)
     assert torch.all((tomography.event_time_correction.detach() - 0.4).abs() < 1e-3)
+
+
+def test_beta_and_alpha_terms_use_zero_weight_short_circuit():
+    truth = true_model()
+    observed = observe(truth)
+    model = VelocityModel1D(DEPTH, truth.vp.detach(), truth.vs.detach(), trainable=True)
+    regularized = Tomography2D(model, EVENTS, beta_vp=0.5, beta_vs=0.25, alpha_vp=0.125, alpha_vs=0.0625)
+    with torch.no_grad():
+        model.vp *= 1.1
+        model.vs *= 1.1
+    groups = make_groups(model, EVENTS, observed)
+    loss = regularized(groups)
+    assert regularized.smooth_vp.item() > 0.0 and regularized.smooth_vs.item() > 0.0
+    assert regularized.damp_vp.item() > 0.0 and regularized.damp_vs.item() > 0.0
+    assert torch.isfinite(loss)
+
+    unregularized = Tomography2D(model, EVENTS)
+    unregularized(groups)
+    assert unregularized.regularization_loss.item() == 0.0
+    assert unregularized.smooth_vp.item() == 0.0 and unregularized.smooth_vs.item() == 0.0
+    assert unregularized.damp_vp.item() == 0.0 and unregularized.damp_vs.item() == 0.0

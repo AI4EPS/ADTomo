@@ -45,7 +45,7 @@ from the horizontal mean of the 3-D initial model (`VelocityModel1D.from_3d`).
 
 Inversion knobs: `TRAINABLE` (subset of `vp,vs,event_loc,event_time`, toggled
 through `requires_grad`), `OPTIMIZER` (`lbfgs` or `adam`), `ITERATIONS`,
-`LEARNING_RATE`, `SPACING`, `GRID_PADDING`, `LAMBDA_VP/VS` (smoothness),
+`LEARNING_RATE`, `SPACING`, `GRID_PADDING`, `BETA_VP/VS` (smoothness),
 `ALPHA_VP/VS` (damping), `NPROC`; extra arguments go to `inversion.py`. Results
 land in `examples/results/` (`model_inverted.pt`, `events_inverted.csv`) and
 figures in `examples/figures/` (`checkerboard.png`, `geometry.png`,

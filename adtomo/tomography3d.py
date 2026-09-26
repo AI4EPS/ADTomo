@@ -30,18 +30,59 @@ def predict_travel_times(model, grid, phase, events_spherical):
     return grid.sample_events(traveltime, events_spherical)
 
 
-def smoothness(field, lon, lat, depth):
-    """Mean squared physical gradients of a (depth, latitude, longitude) field."""
+def _spherical_geometry(lon, lat, depth):
+    """Return fixed spherical geometry for common depth/latitude/longitude cells."""
+    dz = depth[1:] - depth[:-1]
+    dphi = torch.deg2rad(lat[1:] - lat[:-1])
+    dlambda = torch.deg2rad(lon[1:] - lon[:-1])
     radius = 6371.0 - depth
-    dz_km = depth[1:] - depth[:-1]
-    dlat = torch.deg2rad(lat[1:] - lat[:-1])
-    dlon = torch.deg2rad(lon[1:] - lon[:-1])
-    grad_depth = (field[1:, :, :] - field[:-1, :, :]) / dz_km[:, None, None]
-    grad_lat = (field[:, 1:, :] - field[:, :-1, :]) / (radius[:, None, None] * dlat[None, :, None])
-    grad_lon = (field[:, :, 1:] - field[:, :, :-1]) / (
-        radius[:, None, None] * torch.cos(torch.deg2rad(lat))[None, :, None] * dlon[None, None, :]
+    cos_lat = torch.cos(torch.deg2rad(lat))
+    radius_center = 0.5 * (radius[1:] + radius[:-1])
+    phi_center = 0.5 * (torch.deg2rad(lat[1:]) + torch.deg2rad(lat[:-1]))
+    cell_volume = (
+        radius_center[:, None, None].square()
+        * torch.cos(phi_center)[None, :, None]
+        * dz[:, None, None]
+        * dphi[None, :, None]
+        * dlambda[None, None, :]
     )
-    return grad_depth.square().mean() + grad_lat.square().mean() + grad_lon.square().mean()
+    return dz, dphi, dlambda, radius, cos_lat, cell_volume
+
+
+def _cell_centered_smoothness(field, dz, dphi, dlambda, radius, cos_lat, cell_volume):
+    """Volume-averaged squared spherical gradient on common cell centers."""
+    grad_depth_nodes = (field[1:] - field[:-1]) / dz[:, None, None]
+    grad_depth = 0.25 * (
+        grad_depth_nodes[:, :-1, :-1]
+        + grad_depth_nodes[:, 1:, :-1]
+        + grad_depth_nodes[:, :-1, 1:]
+        + grad_depth_nodes[:, 1:, 1:]
+    )
+
+    grad_lat_nodes = (field[:, 1:] - field[:, :-1]) / (radius[:, None, None] * dphi[None, :, None])
+    grad_lat = 0.25 * (
+        grad_lat_nodes[:-1, :, :-1]
+        + grad_lat_nodes[1:, :, :-1]
+        + grad_lat_nodes[:-1, :, 1:]
+        + grad_lat_nodes[1:, :, 1:]
+    )
+
+    grad_lon_nodes = (field[:, :, 1:] - field[:, :, :-1]) / (
+        radius[:, None, None] * cos_lat[None, :, None] * dlambda[None, None, :]
+    )
+    grad_lon = 0.25 * (
+        grad_lon_nodes[:-1, :-1, :]
+        + grad_lon_nodes[1:, :-1, :]
+        + grad_lon_nodes[:-1, 1:, :]
+        + grad_lon_nodes[1:, 1:, :]
+    )
+    grad2 = grad_depth.square() + grad_lat.square() + grad_lon.square()
+    return (grad2 * cell_volume).sum() / cell_volume.sum()
+
+
+def smoothness(field, lon, lat, depth):
+    """Volume-averaged squared physical spherical gradient."""
+    return _cell_centered_smoothness(field, *_spherical_geometry(lon, lat, depth))
 
 
 class Tomography(nn.Module):
@@ -52,9 +93,11 @@ class Tomography(nn.Module):
     against ``observed_phase_dt = phase_time - t0_initial``. Station groups are
     ``[(grid, [(phase, event_indices, observed_phase_dt), ...]), ...]`` with
     ``event_indices`` indexing ``event_loc``.
+    ``huber_delta`` (s) switches the data term to the Huber loss: ``r^2`` for
+    ``|r| <= delta``, ``delta * (2 |r| - delta)`` beyond, so outliers count linearly.
     """
 
-    def __init__(self, model, event_loc, lambda_vp=0.0, lambda_vs=0.0, alpha_vp=0.0, alpha_vs=0.0):
+    def __init__(self, model, event_loc, beta_vp=0.0, beta_vs=0.0, alpha_vp=0.0, alpha_vs=0.0, huber_delta=None):
         super().__init__()
         self.model = model
         self.register_buffer("vp0", model.vp.detach().clone())
@@ -62,10 +105,27 @@ class Tomography(nn.Module):
         event_loc = torch.as_tensor(event_loc, dtype=torch.float64).detach().reshape(-1, 3).contiguous()
         self.event_loc = nn.Parameter(event_loc.clone())
         self.event_time_correction = nn.Parameter(torch.zeros(len(event_loc), dtype=torch.float64))
-        self.lambda_vp = lambda_vp
-        self.lambda_vs = lambda_vs
+        self.beta_vp = beta_vp
+        self.beta_vs = beta_vs
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
+        self.huber_delta = huber_delta
+        self._uses_smoothness = beta_vp != 0.0 or beta_vs != 0.0
+        if self._uses_smoothness:
+            geometry = _spherical_geometry(model.lon, model.lat, model.depth)
+        else:
+            geometry = (None, None, None, None, None, None)
+        for name, value in zip(("dz", "dphi", "dlambda", "radius", "cos_lat", "cell_volume"), geometry):
+            self.register_buffer(name, value)
+
+    def _smoothness(self, field):
+        return _cell_centered_smoothness(
+            field, self.dz, self.dphi, self.dlambda, self.radius, self.cos_lat, self.cell_volume
+        )
+
+    @staticmethod
+    def _damping(field):
+        return field.square().mean()
 
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
         """Data misfit plus regularization.
@@ -81,15 +141,31 @@ class Tomography(nn.Module):
                 travel_time = predict_travel_times(self.model, grid, phase, self.event_loc[event_indices])
                 residuals.append(travel_time + self.event_time_correction[event_indices] - observed_phase_dt)
         residual = torch.cat(residuals)
-        data_sum = residual.square().sum()
+        if self.huber_delta is None:
+            data_sum = residual.square().sum()
+        else:
+            absolute = residual.abs()
+            data_sum = torch.where(absolute <= self.huber_delta, residual.square(), self.huber_delta * (2.0 * absolute - self.huber_delta)).sum()
         data_loss = data_sum / residual.numel() if data_scale is None else data_scale * data_sum
-        dvp = self.model.vp - self.vp0
-        dvs = self.model.vs - self.vs0
-        smooth_vp = smoothness(dvp, self.model.lon, self.model.lat, self.model.depth)
-        smooth_vs = smoothness(dvs, self.model.lon, self.model.lat, self.model.depth)
-        damp_vp = dvp.square().mean()
-        damp_vs = dvs.square().mean()
-        regularization_loss = self.lambda_vp * smooth_vp + self.lambda_vs * smooth_vs + self.alpha_vp * damp_vp + self.alpha_vs * damp_vs
+        zero = data_loss.new_zeros(())
+        smooth_vp = smooth_vs = damp_vp = damp_vs = zero
+        regularization_loss = zero
+        if self.alpha_vp != 0.0 or self.beta_vp != 0.0:
+            dvp = self.model.vp - self.vp0
+            if self.beta_vp != 0.0:
+                smooth_vp = self._smoothness(dvp)
+                regularization_loss = regularization_loss + self.beta_vp * smooth_vp
+            if self.alpha_vp != 0.0:
+                damp_vp = self._damping(dvp)
+                regularization_loss = regularization_loss + self.alpha_vp * damp_vp
+        if self.alpha_vs != 0.0 or self.beta_vs != 0.0:
+            dvs = self.model.vs - self.vs0
+            if self.beta_vs != 0.0:
+                smooth_vs = self._smoothness(dvs)
+                regularization_loss = regularization_loss + self.beta_vs * smooth_vs
+            if self.alpha_vs != 0.0:
+                damp_vs = self._damping(dvs)
+                regularization_loss = regularization_loss + self.alpha_vs * damp_vs
         loss = data_loss + regularization_scale * regularization_loss
         self.data_sum = data_sum.detach()
         self.data_loss = data_loss.detach()

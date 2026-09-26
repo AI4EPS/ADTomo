@@ -46,9 +46,13 @@ class Tomography2D(nn.Module):
     """Arrival-time objective over a 1-D velocity model and trainable event parameters.
 
     Same interface and conventions as :class:`~adtomo.tomography3d.Tomography`.
+    ``huber_delta`` (s) switches the data term to the Huber loss: ``r^2`` for
+    ``|r| <= delta``, ``delta * (2 |r| - delta)`` beyond, so outliers count linearly.
+    ``monotonic`` weights ``sum(relu(v[k] - v[k + 1])^2)`` for Vp and Vs, penalizing
+    velocity that decreases with depth (squared so a constant profile is not a kink).
     """
 
-    def __init__(self, model, event_loc, lambda_vp=0.0, lambda_vs=0.0, alpha_vp=0.0, alpha_vs=0.0):
+    def __init__(self, model, event_loc, beta_vp=0.0, beta_vs=0.0, alpha_vp=0.0, alpha_vs=0.0, huber_delta=None, monotonic=0.0):
         super().__init__()
         self.model = model
         self.register_buffer("vp0", model.vp.detach().clone())
@@ -56,10 +60,12 @@ class Tomography2D(nn.Module):
         event_loc = torch.as_tensor(event_loc, dtype=torch.float64).detach().reshape(-1, 3).contiguous()
         self.event_loc = nn.Parameter(event_loc.clone())
         self.event_time_correction = nn.Parameter(torch.zeros(len(event_loc), dtype=torch.float64))
-        self.lambda_vp = lambda_vp
-        self.lambda_vs = lambda_vs
+        self.beta_vp = beta_vp
+        self.beta_vs = beta_vs
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
+        self.huber_delta = huber_delta
+        self.monotonic = monotonic
 
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
         residuals = []
@@ -68,15 +74,34 @@ class Tomography2D(nn.Module):
                 travel_time = predict_travel_times_2d(self.model, grid, phase, self.event_loc[event_indices])
                 residuals.append(travel_time + self.event_time_correction[event_indices] - observed_phase_dt)
         residual = torch.cat(residuals)
-        data_sum = residual.square().sum()
+        if self.huber_delta is None:
+            data_sum = residual.square().sum()
+        else:
+            absolute = residual.abs()
+            data_sum = torch.where(absolute <= self.huber_delta, residual.square(), self.huber_delta * (2.0 * absolute - self.huber_delta)).sum()
         data_loss = data_sum / residual.numel() if data_scale is None else data_scale * data_sum
-        dvp = self.model.vp - self.vp0
-        dvs = self.model.vs - self.vs0
-        smooth_vp = smoothness_1d(dvp, self.model.depth)
-        smooth_vs = smoothness_1d(dvs, self.model.depth)
-        damp_vp = dvp.square().mean()
-        damp_vs = dvs.square().mean()
-        regularization_loss = self.lambda_vp * smooth_vp + self.lambda_vs * smooth_vs + self.alpha_vp * damp_vp + self.alpha_vs * damp_vs
+        zero = data_loss.new_zeros(())
+        smooth_vp = smooth_vs = damp_vp = damp_vs = decrease = zero
+        regularization_loss = zero
+        if self.alpha_vp != 0.0 or self.beta_vp != 0.0:
+            dvp = self.model.vp - self.vp0
+            if self.beta_vp != 0.0:
+                smooth_vp = smoothness_1d(dvp, self.model.depth)
+                regularization_loss = regularization_loss + self.beta_vp * smooth_vp
+            if self.alpha_vp != 0.0:
+                damp_vp = dvp.square().mean()
+                regularization_loss = regularization_loss + self.alpha_vp * damp_vp
+        if self.alpha_vs != 0.0 or self.beta_vs != 0.0:
+            dvs = self.model.vs - self.vs0
+            if self.beta_vs != 0.0:
+                smooth_vs = smoothness_1d(dvs, self.model.depth)
+                regularization_loss = regularization_loss + self.beta_vs * smooth_vs
+            if self.alpha_vs != 0.0:
+                damp_vs = dvs.square().mean()
+                regularization_loss = regularization_loss + self.alpha_vs * damp_vs
+        if self.monotonic != 0.0:
+            decrease = torch.relu(self.model.vp[:-1] - self.model.vp[1:]).square().sum() + torch.relu(self.model.vs[:-1] - self.model.vs[1:]).square().sum()
+            regularization_loss = regularization_loss + self.monotonic * decrease
         loss = data_loss + regularization_scale * regularization_loss
         self.data_sum = data_sum.detach()
         self.data_loss = data_loss.detach()

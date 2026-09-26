@@ -221,7 +221,7 @@ assert constant_tomography.smooth_vs.item() == 0.0
 assert constant_tomography.damp_vp.item() > 0.0
 assert constant_tomography.damp_vs.item() > 0.0
 
-regularized = Tomography(objective_model, events_spherical, lambda_vp=0.5, lambda_vs=0.25, alpha_vp=0.125, alpha_vs=0.0625)
+regularized = Tomography(objective_model, events_spherical, beta_vp=0.5, beta_vs=0.25, alpha_vp=0.125, alpha_vs=0.0625)
 with torch.no_grad():
     objective_model.vp[2, 3, 4] += 0.2
     objective_model.vs[2, 3, 4] -= 0.1
