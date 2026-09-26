@@ -41,7 +41,7 @@ def main():
 
     lon = torch.arange(-121.0, -117.5, 0.1, dtype=torch.float64)
     lat = torch.arange(33.5, 36.5, 0.1, dtype=torch.float64)
-    depth = torch.arange(-15.0, 50.1, 5.0, dtype=torch.float64)
+    depth = torch.arange(-2.0, 20.1, 2.0, dtype=torch.float64)
     depth_grid, lat_grid, lon_grid = torch.meshgrid(depth, lat, lon, indexing="ij")
     vp = 5.5 + 0.03 * depth_grid.clamp_min(0.0)
     vs = vp / 1.73

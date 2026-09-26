@@ -1,4 +1,4 @@
-"""Generate reproducible surface stations inside a chosen global region."""
+"""Generate reproducible stations with shallow elevations/depths."""
 
 import argparse
 from pathlib import Path
@@ -13,7 +13,7 @@ DATA = ROOT / "data"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--num-stations", type=int, default=50)
+    parser.add_argument("--num-stations", type=int, default=4)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--lon-min", type=float, default=-120.6)
     parser.add_argument("--lon-max", type=float, default=-118.0)
@@ -26,12 +26,13 @@ def main():
         "station_id": [f"STA{i:03d}" for i in range(args.num_stations)],
         "longitude": rng.uniform(args.lon_min, args.lon_max, args.num_stations),
         "latitude": rng.uniform(args.lat_min, args.lat_max, args.num_stations),
-        "depth_km": np.zeros(args.num_stations),
+        "depth_km": rng.uniform(-2.0, 2.0, args.num_stations),
     })
     DATA.mkdir(exist_ok=True)
     stations.to_csv(DATA / "stations.csv", index=False)
     print(f"saved {len(stations)} stations to {DATA / 'stations.csv'}")
     print(f"longitude=[{stations.longitude.min():.4f}, {stations.longitude.max():.4f}], latitude=[{stations.latitude.min():.4f}, {stations.latitude.max():.4f}]")
+    print(f"station depth=[{stations.depth_km.min():.3f}, {stations.depth_km.max():.3f}] km")
 
 
 if __name__ == "__main__":

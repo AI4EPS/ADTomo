@@ -19,6 +19,8 @@ def main():
     parser.add_argument("--spacing-km", type=float, default=1.0)
     parser.add_argument("--grid-padding-km", type=float, default=20.0)
     parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--vp-initial-km-s", type=float, default=5.5)
+    parser.add_argument("--vs-initial-km-s", type=float, default=3.2)
     parser.add_argument("--alpha-vp", type=float, default=0.0)
     parser.add_argument("--alpha-vs", type=float, default=0.0)
     parser.add_argument("--beta-vp", type=float, default=0.0)
@@ -37,8 +39,18 @@ def main():
 
         # Synthetic truth is read only for the optional comparison figure.
         true = torch.load(args.data_dir / "model_true.pt", weights_only=True) if (args.data_dir / "model_true.pt").is_file() else None
-        model = VelocityModel1D.from_3d(VelocityModel(**initial))
-        initial_model = VelocityModel1D.from_3d(VelocityModel(**initial), trainable=False)
+        depth = initial["depth"]
+        model = VelocityModel1D(
+            depth,
+            torch.full_like(depth, args.vp_initial_km_s),
+            torch.full_like(depth, args.vs_initial_km_s),
+        )
+        initial_model = VelocityModel1D(
+            depth,
+            torch.full_like(depth, args.vp_initial_km_s),
+            torch.full_like(depth, args.vs_initial_km_s),
+            trainable=False,
+        )
         true_model = VelocityModel1D.from_3d(VelocityModel(**true), trainable=False) if true is not None else None
         event_loc = events_initial[["longitude", "latitude", "depth_km"]].to_numpy()
 

@@ -104,8 +104,8 @@ def main():
             relocated[["longitude", "latitude", "depth_km"]] = tomography.event_loc.detach().cpu().numpy()
             correction = tomography.event_time_correction.detach().cpu().numpy()
             figure, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-            axes[0, 0].semilogy(history, "o-", color="tab:blue")
-            axes[0, 0].set(title="Data loss", xlabel="evaluation", ylabel="sum-of-squares loss")
+            axes[0, 0].semilogy(range(len(history)), history, "o-", color="tab:blue")
+            axes[0, 0].set(title="Data loss", xlabel="iteration", ylabel="mean squared residual")
             axes[0, 0].grid(alpha=0.3)
             if events_true is not None:
                 axes[0, 1].scatter(events_true.longitude, events_true.latitude, marker="*", s=45, color="k", label="true")

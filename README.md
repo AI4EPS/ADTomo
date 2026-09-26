@@ -24,14 +24,13 @@ catalog are used only for synthetic comparison figures.
 
 ```bash
 cd examples
-python 00_gen_velocity.py
-python 01_gen_stations.py
-python 02_gen_events.py \
-    --horizontal-noise-km 2.0 \
-    --depth-noise-km 2.0 \
-    --time-noise-s 0.5
-python 03_gen_picks.py --spacing-km 2.0
+bash data.sh
 ```
+
+`data.sh` uses 2 km horizontal noise, 2 km depth noise, and 0.5 s origin-time
+noise by default. Edit its small configuration block for custom catalogs.
+The synthetic model spans −2 to 20 km depth, stations are distributed from
+−2 to 2 km, and true events span 1.5 to 15 km. Depth is positive downward.
 
 The generated tables use `station_id`, `longitude`, `latitude`, `depth_km` for
 stations and `event_id`, `event_time`, `longitude`, `latitude`, `depth_km` for

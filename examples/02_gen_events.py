@@ -26,7 +26,7 @@ def plot_geometry(model, stations, events, initial, args):
     scatter = axis.scatter(events.longitude, events.latitude, c=events.depth_km, cmap="viridis", s=22, label="true events")
     if args.horizontal_noise_km > 0 or args.depth_noise_km > 0:
         axis.scatter(initial.longitude, initial.latitude, marker="x", color="tab:orange", s=18, label="initial (noisy) events")
-    axis.scatter(stations.longitude, stations.latitude, marker="^", color="tab:red", edgecolor="black", s=55, label="surface stations")
+    axis.scatter(stations.longitude, stations.latitude, marker="^", color="tab:red", edgecolor="black", s=55, label="stations")
     axis.set(xlabel="longitude (deg)", ylabel="latitude (deg)", title="Synthetic acquisition geometry")
     axis.legend(loc="best")
     figure.colorbar(scatter, ax=axis, label="event depth (km)")
@@ -36,14 +36,14 @@ def plot_geometry(model, stations, events, initial, args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--num-events", type=int, default=500)
+    parser.add_argument("--num-events", type=int, default=100)
     parser.add_argument("--seed", type=int, default=2)
     parser.add_argument("--lon-min", type=float, default=-120.6)
     parser.add_argument("--lon-max", type=float, default=-118.0)
     parser.add_argument("--lat-min", type=float, default=33.8)
     parser.add_argument("--lat-max", type=float, default=36.1)
-    parser.add_argument("--depth-min", type=float, default=2.0)
-    parser.add_argument("--depth-max", type=float, default=30.0)
+    parser.add_argument("--depth-min-km", type=float, default=1.5)
+    parser.add_argument("--depth-max-km", type=float, default=15.0)
     parser.add_argument("--horizontal-noise-km", type=float, default=2.0, help="std of horizontal initial-location noise (km)")
     parser.add_argument("--depth-noise-km", type=float, default=2.0, help="std of initial depth noise (km)")
     parser.add_argument("--time-noise-s", type=float, default=0.5, help="std of initial origin-time noise (s)")
@@ -61,7 +61,7 @@ def main():
         "event_time": [time.isoformat(timespec="milliseconds") for time in event_times],
         "longitude": rng.uniform(args.lon_min, args.lon_max, args.num_events),
         "latitude": rng.uniform(args.lat_min, args.lat_max, args.num_events),
-        "depth_km": rng.uniform(args.depth_min, args.depth_max, args.num_events),
+        "depth_km": rng.uniform(args.depth_min_km, args.depth_max_km, args.num_events),
     })
 
     initial = events.copy()
