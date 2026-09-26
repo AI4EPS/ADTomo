@@ -16,7 +16,7 @@ DATA = ROOT / "data"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--spacing", type=float, default=2.0, help="forward-grid spacing in km")
+    parser.add_argument("--spacing-km", type=float, default=2.0, help="forward-grid spacing in km")
     args = parser.parse_args()
 
     started = perf_counter()
@@ -28,7 +28,7 @@ def main():
     picks = []
     with torch.no_grad():
         for station in stations.itertuples(index=False):
-            grid = ForwardGrid([station.longitude, station.latitude, station.depth_km], events_spherical, model, spacing=args.spacing)
+            grid = ForwardGrid([station.longitude, station.latitude, station.depth_km], events_spherical, model, spacing=args.spacing_km)
             for phase in ("P", "S"):
                 travel_times = predict_travel_times(model, grid, phase, events_spherical)
                 for event, travel_time in zip(events.itertuples(index=False), travel_times.tolist()):

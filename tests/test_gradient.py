@@ -1,6 +1,10 @@
 """Visual Taylor-convergence checks for the retained Eikonal adjoints."""
 
+import os
 from pathlib import Path
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["PYTORCH_NVML_BASED_CUDA_CHECK"] = "1"
 
 import matplotlib.pyplot as plt
 import torch
