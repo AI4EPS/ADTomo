@@ -15,15 +15,29 @@ pip install -e . --no-build-isolation
 The build creates the two extensions used by the examples and tests:
 `eikonal2d_op` and `eikonal3d_op`.
 
-## Run the synthetic example
+## Generate fixed synthetic data
 
-Generate the shared 3-D model, stations, events, and picks, then run a 3-D
-inversion:
+The numbered scripts create one fixed dataset under `examples/data/`:
 
 ```bash
 cd examples
-bash run_pipeline.sh
+python 00_gen_velocity.py
+python 01_gen_stations.py
+python 02_gen_events.py
+python 03_gen_picks.py
 ```
+
+## Run the inversion
+
+Edit the stage settings at the top of `examples/run_inversion.sh`, then run:
+
+```bash
+bash run_inversion.sh
+```
+
+The workflow is explicit and sequential: 1-D velocity inversion, event
+relocation, then 3-D velocity inversion. It writes `inversion_1d.png`,
+`relocation.png`, and `inversion_3d.png` under `examples/figures/`.
 
 ## Run the gradient validation
 

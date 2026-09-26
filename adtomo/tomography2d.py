@@ -41,11 +41,9 @@ class Tomography2D(nn.Module):
     """Arrival-time objective over a 1-D velocity model and trainable event parameters.
 
     Same interface and conventions as :class:`~adtomo.tomography3d.Tomography`.
-    ``huber_delta`` (s) switches the data term to the Huber loss: ``r^2`` for
-    ``|r| <= delta``, ``delta * (2 |r| - delta)`` beyond, so outliers count linearly.
     """
 
-    def __init__(self, model, event_loc, beta_vp=0.0, beta_vs=0.0, alpha_vp=0.0, alpha_vs=0.0, huber_delta=None):
+    def __init__(self, model, event_loc, beta_vp=0.0, beta_vs=0.0, alpha_vp=0.0, alpha_vs=0.0):
         super().__init__()
         self.model = model
         self.register_buffer("vp0", model.vp.detach().clone())
@@ -57,7 +55,6 @@ class Tomography2D(nn.Module):
         self.beta_vs = beta_vs
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
-        self.huber_delta = huber_delta
         self.register_buffer("dz", model.depth[1:] - model.depth[:-1])
 
     def _smoothness(self, field):
@@ -74,11 +71,7 @@ class Tomography2D(nn.Module):
             residual = torch.cat(residuals)
         else:
             residual = sum(parameter.sum() for parameter in self.parameters()).reshape(1) * 0.0
-        if self.huber_delta is None:
-            data_sum = residual.square().sum()
-        else:
-            absolute = residual.abs()
-            data_sum = torch.where(absolute <= self.huber_delta, residual.square(), self.huber_delta * (2.0 * absolute - self.huber_delta)).sum()
+        data_sum = residual.square().sum()
         data_loss = data_sum / residual.numel() if data_scale is None else data_scale * data_sum
         regularization_loss = data_loss.new_zeros(())
         if self.alpha_vp != 0.0 or self.beta_vp != 0.0:

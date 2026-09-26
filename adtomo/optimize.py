@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 
 
-TRAINABLE = ("vp", "vs", "event_loc", "event_time")
+_TRAINABLE = ("vp", "vs", "event_loc", "event_time")
 
 
 def init_distributed():
@@ -20,8 +20,8 @@ def init_distributed():
 def set_trainable(tomography, names):
     """Enable gradients for the named parameters (subset of ``vp, vs, event_loc, event_time``) and return them."""
     names = set(names)
-    if not names or names - set(TRAINABLE):
-        raise ValueError(f"trainable names must be a non-empty subset of {TRAINABLE}, got {sorted(names)}")
+    if not names or names - set(_TRAINABLE):
+        raise ValueError(f"trainable names must be a non-empty subset of {_TRAINABLE}, got {sorted(names)}")
     tomography.model.vp.requires_grad_("vp" in names)
     tomography.model.vs.requires_grad_("vs" in names)
     tomography.event_loc.requires_grad_("event_loc" in names)
@@ -73,7 +73,6 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
         return (data_sum / total_observations).item()
 
     history = [data_loss()]
-    log_interval = max(1, iterations // 10)
     for iteration in range(iterations):
         if isinstance(optimizer, torch.optim.LBFGS):
             optimizer.step(closure)
@@ -81,6 +80,6 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
             closure()
             optimizer.step()
         history.append(data_loss())
-        if rank == 0 and log is not None and ((iteration + 1) % log_interval == 0 or iteration == iterations - 1):
-            log(f"iteration {iteration + 1:03d}/{iterations} data={history[-1]:.6e}")
+        if rank == 0 and log is not None:
+            log(f"iteration {iteration + 1}/{iterations} data={history[-1]:.6e}")
     return history

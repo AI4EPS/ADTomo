@@ -1,42 +1,44 @@
 #!/usr/bin/env bash
-# Invert the dataset in data/ with a 1-D (MODEL=1d) or 3-D (MODEL=3d) model, serially or under torchrun.
-#
-#   MODEL=3d bash run_inversion.sh                                        # invert vp,vs
-#   MODEL=1d TRAINABLE=event_loc,event_time bash run_inversion.sh         # relocation only
-#   MODEL=1d TRAINABLE=vp,vs,event_loc,event_time NPROC=4 bash run_inversion.sh
-#
-# Extra command-line arguments are passed to inversion.py (e.g. --grid-padding 15).
+# Edit these values, then run: bash run_inversion.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-MODEL="${MODEL:-3d}"                       # 3d | 1d
-NPROC="${NPROC:-1}"
-TRAINABLE="${TRAINABLE:-vp,vs}"            # subset of vp,vs,event_loc,event_time
-OPTIMIZER="${OPTIMIZER:-lbfgs}"            # lbfgs | adam
-ITERATIONS="${ITERATIONS:-30}"
-BETA_VP="${BETA_VP:-0.0}"
-BETA_VS="${BETA_VS:-0.0}"
-ALPHA_VP="${ALPHA_VP:-0.0}"
-ALPHA_VS="${ALPHA_VS:-0.0}"
+NPROC=1
+SPACING_1D=1.0
+SPACING_3D=2.0
+GRID_PADDING=20.0
+ITERATIONS_1D=20
+ITERATIONS_RELOCATION=20
+ITERATIONS_3D=30
+ALPHA_VP_1D=0.0
+ALPHA_VS_1D=0.0
+BETA_VP_1D=0.0
+BETA_VS_1D=0.0
+ALPHA_VP_3D=0.0
+ALPHA_VS_3D=0.0
+BETA_VP_3D=0.0
+BETA_VS_3D=0.0
 
 ARGS=(
-    --model "$MODEL"
-    --trainable "$TRAINABLE"
-    --optimizer "$OPTIMIZER"
-    --iterations "$ITERATIONS"
-    --beta-vp "$BETA_VP"
-    --beta-vs "$BETA_VS"
-    --alpha-vp "$ALPHA_VP"
-    --alpha-vs "$ALPHA_VS"
+    --spacing-1d "$SPACING_1D"
+    --spacing-3d "$SPACING_3D"
+    --grid-padding "$GRID_PADDING"
+    --iterations-1d "$ITERATIONS_1D"
+    --iterations-relocation "$ITERATIONS_RELOCATION"
+    --iterations-3d "$ITERATIONS_3D"
+    --alpha-vp-1d "$ALPHA_VP_1D"
+    --alpha-vs-1d "$ALPHA_VS_1D"
+    --beta-vp-1d "$BETA_VP_1D"
+    --beta-vs-1d "$BETA_VS_1D"
+    --alpha-vp-3d "$ALPHA_VP_3D"
+    --alpha-vs-3d "$ALPHA_VS_3D"
+    --beta-vp-3d "$BETA_VP_3D"
+    --beta-vs-3d "$BETA_VS_3D"
 )
-[[ -n "${LEARNING_RATE:-}" ]] && ARGS+=(--learning-rate "$LEARNING_RATE")
-[[ -n "${SPACING:-}" ]] && ARGS+=(--spacing "$SPACING")
-[[ -n "${GRID_PADDING:-}" ]] && ARGS+=(--grid-padding "$GRID_PADDING")
 
-# Extra command-line arguments come last, so argparse treats them as overrides.
 if [[ "$NPROC" -eq 1 ]]; then
-    python "$SCRIPT_DIR/inversion.py" "${ARGS[@]}" "$@"
+    python "$SCRIPT_DIR/inversion.py" "${ARGS[@]}"
 else
-    torchrun --standalone --nproc_per_node="$NPROC" "$SCRIPT_DIR/inversion.py" "${ARGS[@]}" "$@"
+    torchrun --standalone --nproc_per_node="$NPROC" "$SCRIPT_DIR/inversion.py" "${ARGS[@]}"
 fi
