@@ -4,6 +4,8 @@ import eikonal3d_op
 import torch
 import torch.nn as nn
 
+from .grid import R_EARTH
+
 
 class _Eikonal3D(torch.autograd.Function):
     @staticmethod
@@ -31,58 +33,37 @@ def predict_travel_times(model, grid, phase, events_spherical):
 
 
 def _spherical_geometry(lon, lat, depth):
-    """Return fixed spherical geometry for common depth/latitude/longitude cells."""
+    """Return fixed geometry for forward-difference spherical grid points."""
     dz = depth[1:] - depth[:-1]
     dphi = torch.deg2rad(lat[1:] - lat[:-1])
     dlambda = torch.deg2rad(lon[1:] - lon[:-1])
-    radius = 6371.0 - depth
-    cos_lat = torch.cos(torch.deg2rad(lat))
-    radius_center = 0.5 * (radius[1:] + radius[:-1])
-    phi_center = 0.5 * (torch.deg2rad(lat[1:]) + torch.deg2rad(lat[:-1]))
-    cell_volume = (
-        radius_center[:, None, None].square()
-        * torch.cos(phi_center)[None, :, None]
+    radius = R_EARTH - depth[:-1]
+    cos_lat = torch.cos(torch.deg2rad(lat[:-1]))
+    volume = (
+        radius[:, None, None].square()
+        * cos_lat[None, :, None]
         * dz[:, None, None]
         * dphi[None, :, None]
         * dlambda[None, None, :]
     )
-    return dz, dphi, dlambda, radius, cos_lat, cell_volume
+    return dz, dphi, dlambda, radius, cos_lat, volume
 
 
-def _cell_centered_smoothness(field, dz, dphi, dlambda, radius, cos_lat, cell_volume):
-    """Volume-averaged squared spherical gradient on common cell centers."""
-    grad_depth_nodes = (field[1:] - field[:-1]) / dz[:, None, None]
-    grad_depth = 0.25 * (
-        grad_depth_nodes[:, :-1, :-1]
-        + grad_depth_nodes[:, 1:, :-1]
-        + grad_depth_nodes[:, :-1, 1:]
-        + grad_depth_nodes[:, 1:, 1:]
-    )
-
-    grad_lat_nodes = (field[:, 1:] - field[:, :-1]) / (radius[:, None, None] * dphi[None, :, None])
-    grad_lat = 0.25 * (
-        grad_lat_nodes[:-1, :, :-1]
-        + grad_lat_nodes[1:, :, :-1]
-        + grad_lat_nodes[:-1, :, 1:]
-        + grad_lat_nodes[1:, :, 1:]
-    )
-
-    grad_lon_nodes = (field[:, :, 1:] - field[:, :, :-1]) / (
+def _spherical_smoothness(field, dz, dphi, dlambda, radius, cos_lat, volume):
+    """Volume-averaged squared spherical gradient on forward-difference nodes."""
+    reference = field[:-1, :-1, :-1]
+    grad_depth = (field[1:, :-1, :-1] - reference) / dz[:, None, None]
+    grad_lat = (field[:-1, 1:, :-1] - reference) / (radius[:, None, None] * dphi[None, :, None])
+    grad_lon = (field[:-1, :-1, 1:] - reference) / (
         radius[:, None, None] * cos_lat[None, :, None] * dlambda[None, None, :]
     )
-    grad_lon = 0.25 * (
-        grad_lon_nodes[:-1, :-1, :]
-        + grad_lon_nodes[1:, :-1, :]
-        + grad_lon_nodes[:-1, 1:, :]
-        + grad_lon_nodes[1:, 1:, :]
-    )
     grad2 = grad_depth.square() + grad_lat.square() + grad_lon.square()
-    return (grad2 * cell_volume).sum() / cell_volume.sum()
+    return (grad2 * volume).sum() / volume.sum()
 
 
 def smoothness(field, lon, lat, depth):
     """Volume-averaged squared physical spherical gradient."""
-    return _cell_centered_smoothness(field, *_spherical_geometry(lon, lat, depth))
+    return _spherical_smoothness(field, *_spherical_geometry(lon, lat, depth))
 
 
 class Tomography(nn.Module):
@@ -110,17 +91,12 @@ class Tomography(nn.Module):
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
         self.huber_delta = huber_delta
-        if beta_vp != 0.0 or beta_vs != 0.0:
-            geometry = _spherical_geometry(model.lon, model.lat, model.depth)
-        else:
-            geometry = (None, None, None, None, None, None)
-        for name, value in zip(("dz", "dphi", "dlambda", "radius", "cos_lat", "cell_volume"), geometry):
+        geometry = _spherical_geometry(model.lon, model.lat, model.depth)
+        for name, value in zip(("dz", "dphi", "dlambda", "radius", "cos_lat", "volume"), geometry):
             self.register_buffer(name, value)
 
     def _smoothness(self, field):
-        return _cell_centered_smoothness(
-            field, self.dz, self.dphi, self.dlambda, self.radius, self.cos_lat, self.cell_volume
-        )
+        return _spherical_smoothness(field, self.dz, self.dphi, self.dlambda, self.radius, self.cos_lat, self.volume)
 
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
         """Data loss plus regularization.

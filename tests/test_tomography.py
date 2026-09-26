@@ -103,28 +103,26 @@ def test_event_parameter_gradients_match_finite_differences():
     assert abs(tomography.event_loc.grad[0, 0].item() - finite_difference) / (abs(finite_difference) + 1e-12) < 1e-3
 
 
-def test_spherical_smoothness_is_cell_centered_and_volume_weighted():
+def test_spherical_smoothness_uses_node_forward_differences_and_volume_weights():
     lon = torch.tensor([-121.0, -120.4, -119.7, -119.0], dtype=torch.float64)
     lat = torch.tensor([34.0, 34.6, 35.4], dtype=torch.float64)
     depth = torch.tensor([-2.0, 1.0, 6.0, 14.0], dtype=torch.float64)
     depth_grid, lat_grid, lon_grid = torch.meshgrid(depth, lat, lon, indexing="ij")
     field = 0.02 * depth_grid + 0.3 * torch.deg2rad(lat_grid) + 0.2 * torch.deg2rad(lon_grid)
 
-    radius = 6371.0 - depth
+    radius = 6371.0 - depth[:-1]
     dz = depth[1:] - depth[:-1]
     dphi = torch.deg2rad(lat[1:] - lat[:-1])
     dlambda = torch.deg2rad(lon[1:] - lon[:-1])
-    cos_lat = torch.cos(torch.deg2rad(lat))
-    radius_center = 0.5 * (radius[1:] + radius[:-1])
-    phi_center = 0.5 * (torch.deg2rad(lat[1:]) + torch.deg2rad(lat[:-1]))
-    volume = radius_center[:, None, None].square() * torch.cos(phi_center)[None, :, None]
+    cos_lat = torch.cos(torch.deg2rad(lat[:-1]))
+    volume = radius[:, None, None].square() * cos_lat[None, :, None]
     volume = volume * dz[:, None, None] * dphi[None, :, None] * dlambda[None, None, :]
-    depth_nodes = (field[1:] - field[:-1]) / dz[:, None, None]
-    grad_depth = 0.25 * (depth_nodes[:, :-1, :-1] + depth_nodes[:, 1:, :-1] + depth_nodes[:, :-1, 1:] + depth_nodes[:, 1:, 1:])
-    lat_nodes = (field[:, 1:] - field[:, :-1]) / (radius[:, None, None] * dphi[None, :, None])
-    grad_lat = 0.25 * (lat_nodes[:-1, :, :-1] + lat_nodes[1:, :, :-1] + lat_nodes[:-1, :, 1:] + lat_nodes[1:, :, 1:])
-    lon_nodes = (field[:, :, 1:] - field[:, :, :-1]) / (radius[:, None, None] * cos_lat[None, :, None] * dlambda[None, None, :])
-    grad_lon = 0.25 * (lon_nodes[:-1, :-1, :] + lon_nodes[1:, :-1, :] + lon_nodes[:-1, 1:, :] + lon_nodes[1:, 1:, :])
+    reference = field[:-1, :-1, :-1]
+    grad_depth = (field[1:, :-1, :-1] - reference) / dz[:, None, None]
+    grad_lat = (field[:-1, 1:, :-1] - reference) / (radius[:, None, None] * dphi[None, :, None])
+    grad_lon = (field[:-1, :-1, 1:] - reference) / (
+        radius[:, None, None] * cos_lat[None, :, None] * dlambda[None, None, :]
+    )
     expected = ((grad_depth.square() + grad_lat.square() + grad_lon.square()) * volume).sum() / volume.sum()
     assert torch.allclose(smoothness(field, lon, lat, depth), expected)
 
@@ -175,6 +173,7 @@ def test_regularization_weights_skip_unrequested_terms():
     assert unregularized.regularization_loss.item() == 0.0
     assert unregularized.smooth_vp.item() == 0.0 and unregularized.smooth_vs.item() == 0.0
     assert unregularized.damp_vp.item() == 0.0 and unregularized.damp_vs.item() == 0.0
+    assert unregularized.volume.shape == (len(unregularized_model.depth) - 1, len(unregularized_model.lat) - 1, len(unregularized_model.lon) - 1)
     assert torch.allclose(loss, unregularized.data_loss)
 
 

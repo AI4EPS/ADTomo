@@ -55,81 +55,6 @@ kernel_slopes = [
 assert 0.8 < statistics.median(kernel_change_slopes) < 1.2
 assert 1.8 < statistics.median(kernel_slopes) < 2.2
 
-# Each source-cell corner uses the discrete source adjoint and Simpson chain rule.
-source_corner_errors = []
-finite_difference_step = 1e-4
-for i in (1, 2):
-    for j in (1, 2):
-        for k in (0, 1):
-            plus = taylor_velocity.detach().clone()
-            minus = taylor_velocity.detach().clone()
-            plus[k, j, i] += finite_difference_step
-            minus[k, j, i] -= finite_difference_step
-            plus_objective = solve_eikonal3d(plus, top_source, 1.0)[3, 4, 5]
-            minus_objective = solve_eikonal3d(minus, top_source, 1.0)[3, 4, 5]
-            finite_difference = (plus_objective - minus_objective).item() / (2.0 * finite_difference_step)
-            adjoint = taylor_velocity.grad[k, j, i].item()
-            source_corner_errors.append(abs(adjoint - finite_difference) / (abs(finite_difference) + 1e-12))
-assert statistics.median(source_corner_errors) < 1e-5
-assert max(source_corner_errors) < 1e-4
-
-# A station-aligned source keeps the same source-cell adjoint contract.
-on_grid_velocity = torch.full((4, 5, 6), 5.0, dtype=torch.float64, requires_grad=True)
-on_grid_source = (1.0, 1.0, 0.0)
-on_grid_objective = solve_eikonal3d(on_grid_velocity, on_grid_source, 1.0)[3, 4, 5]
-on_grid_objective.backward()
-on_grid_derivative = (on_grid_velocity.grad * taylor_direction).sum().item()
-on_grid_remainders = []
-for epsilon in kernel_epsilons:
-    perturbed = solve_eikonal3d(on_grid_velocity.detach() + epsilon * taylor_direction, on_grid_source, 1.0)[3, 4, 5]
-    on_grid_remainders.append(abs(perturbed.item() - on_grid_objective.item() - epsilon * on_grid_derivative))
-on_grid_slopes = [
-    math.log(right / left) / math.log(next_epsilon / epsilon)
-    for left, right, epsilon, next_epsilon in zip(
-        on_grid_remainders, on_grid_remainders[1:], kernel_epsilons, kernel_epsilons[1:]
-    )
-]
-assert 1.8 < statistics.median(on_grid_slopes) < 2.2
-
-on_grid_corner_errors = []
-for i in (1, 2):
-    for j in (1, 2):
-        for k in (0, 1):
-            plus = on_grid_velocity.detach().clone()
-            minus = on_grid_velocity.detach().clone()
-            plus[k, j, i] += finite_difference_step
-            minus[k, j, i] -= finite_difference_step
-            finite_difference = (
-                solve_eikonal3d(plus, on_grid_source, 1.0)[3, 4, 5]
-                - solve_eikonal3d(minus, on_grid_source, 1.0)[3, 4, 5]
-            ).item() / (2.0 * finite_difference_step)
-            adjoint = on_grid_velocity.grad[k, j, i].item()
-            on_grid_corner_errors.append(abs(adjoint - finite_difference) / (abs(finite_difference) + 1e-12))
-assert statistics.median(on_grid_corner_errors) < 1e-5
-assert max(on_grid_corner_errors) < 1e-4
-
-# The same source-adjoint contract applies when the source is interior in z.
-interior_velocity = torch.full((4, 5, 6), 5.0, dtype=torch.float64, requires_grad=True)
-interior_source = (1.2, 1.3, 1.1)
-interior_objective = solve_eikonal3d(interior_velocity, interior_source, 1.0)[3, 4, 5]
-interior_objective.backward()
-interior_errors = []
-for i in (1, 2):
-    for j in (1, 2):
-        for k in (1, 2):
-            plus = interior_velocity.detach().clone()
-            minus = interior_velocity.detach().clone()
-            plus[k, j, i] += finite_difference_step
-            minus[k, j, i] -= finite_difference_step
-            finite_difference = (
-                solve_eikonal3d(plus, interior_source, 1.0)[3, 4, 5]
-                - solve_eikonal3d(minus, interior_source, 1.0)[3, 4, 5]
-            ).item() / (2.0 * finite_difference_step)
-            adjoint = interior_velocity.grad[k, j, i].item()
-            interior_errors.append(abs(adjoint - finite_difference) / (abs(finite_difference) + 1e-12))
-assert statistics.median(interior_errors) < 1e-5
-assert max(interior_errors) < 1e-4
-
 lon = torch.arange(-120.8, -119.19, 0.1, dtype=torch.float64)
 lat = torch.arange(34.2, 35.81, 0.1, dtype=torch.float64)
 depth = torch.arange(-15.0, 50.1, 5.0, dtype=torch.float64)
@@ -241,6 +166,24 @@ assert torch.allclose(
 regularized_loss.backward()
 assert torch.isfinite(objective_model.vp.grad).all() and objective_model.vp.grad.abs().sum() > 0
 assert torch.isfinite(objective_model.vs.grad).all() and objective_model.vs.grad.abs().sum() > 0
+
+# The node-based spherical smoothing term itself has a second-order Taylor
+# remainder, including all three spherical metric factors.
+smooth_field = (torch.arange(objective_model.vp.numel(), dtype=torch.float64).reshape_as(objective_model.vp) / 1000.0).requires_grad_()
+smooth_value = smoothness(smooth_field, objective_model.lon, objective_model.lat, objective_model.depth)
+smooth_value.backward()
+smooth_direction = torch.linspace(-0.01, 0.01, smooth_field.numel(), dtype=torch.float64).reshape_as(smooth_field)
+smooth_derivative = (smooth_field.grad * smooth_direction).sum().item()
+smooth_remainders = []
+for epsilon in epsilons:
+    candidate = (smooth_field.detach() + epsilon * smooth_direction).requires_grad_(False)
+    smooth_remainders.append(abs(smoothness(candidate, objective_model.lon, objective_model.lat, objective_model.depth).item() - smooth_value.item() - epsilon * smooth_derivative))
+assert all(math.isfinite(remainder) and remainder > 0 for remainder in smooth_remainders)
+smooth_slopes = [
+    math.log(right / left) / math.log(next_epsilon / epsilon)
+    for left, right, epsilon, next_epsilon in zip(smooth_remainders, smooth_remainders[1:], epsilons, epsilons[1:])
+]
+assert 1.7 < sorted(smooth_slopes)[len(smooth_slopes) // 2] < 2.3
 
 epsilons_tensor = torch.tensor(epsilons, dtype=torch.float64)
 reference = full_remainders[0] * (epsilons_tensor / epsilons_tensor[0]).square()

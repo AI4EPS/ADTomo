@@ -27,6 +27,8 @@ setup(
     cmdclass={"build_ext": BuildExtension.with_options(no_cuda=True)},
     install_requires=[
         "torch>=2.10",
+        "numpy>=1.24",
+        "pandas>=2.0",
     ],
     python_requires=">=3.9",
 )
