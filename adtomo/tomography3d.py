@@ -48,7 +48,8 @@ class Tomography(nn.Module):
         self.register_buffer("vp0", model.vp.detach().clone())
         self.register_buffer("vs0", model.vs.detach().clone())
         event_loc = torch.as_tensor(event_loc, dtype=torch.float64).detach().reshape(-1, 3).contiguous()
-        self.event_loc = nn.Parameter(event_loc.clone())
+        self.event_loc_hori = nn.Parameter(event_loc[:, :2].clone())
+        self.event_loc_vert = nn.Parameter(event_loc[:, 2].clone())
         self.event_time_correction = nn.Parameter(torch.zeros(len(event_loc), dtype=torch.float64))
         self.beta_vp = beta_vp
         self.beta_vs = beta_vs
@@ -68,6 +69,10 @@ class Tomography(nn.Module):
         )
         for name, value in zip(("dz", "dphi", "dlambda", "radius", "cos_lat", "volume"), (dz, dphi, dlambda, radius, cos_lat, volume)):
             self.register_buffer(name, value)
+
+    @property
+    def event_loc(self):
+        return torch.cat((self.event_loc_hori, self.event_loc_vert[:, None]), dim=1)
 
     def _smoothness(self, field):
         reference = field[:-1, :-1, :-1]

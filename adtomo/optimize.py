@@ -18,18 +18,22 @@ def init_distributed():
 
 
 def set_trainable(tomography, names):
-    """Enable gradients for the named parameters (subset of ``vp, vs, event_loc, event_time``) and return them."""
+    """Enable gradients for the named parameters and return them."""
     names = set(names)
     if not names or names - set(_TRAINABLE):
         raise ValueError(f"trainable names must be a non-empty subset of {_TRAINABLE}, got {sorted(names)}")
     tomography.model.vp.requires_grad_("vp" in names)
     tomography.model.vs.requires_grad_("vs" in names)
-    tomography.event_loc.requires_grad_("event_loc" in names)
+    if hasattr(tomography, "event_loc_hori"):
+        tomography.event_loc_hori.requires_grad_("event_loc" in names)
+        tomography.event_loc_vert.requires_grad_("event_loc" in names)
+    else:
+        tomography.event_loc.requires_grad_("event_loc" in names)
     tomography.event_time_correction.requires_grad_("event_time" in names)
     return [parameter for parameter in tomography.parameters() if parameter.requires_grad]
 
 
-def optimize(tomography, groups, parameters, total_observations, optimizer="lbfgs", iterations=30, learning_rate=None, log=print):
+def optimize(tomography, groups, parameters, total_observations, optimizer="lbfgs", iterations=30, learning_rate=None, learning_rates=None, log=print):
     """Minimize ``tomography(groups)`` with L-BFGS or Adam; returns the data loss after every iteration.
 
     Under ``torchrun`` each rank passes its own station ``groups``; gradients
@@ -42,9 +46,18 @@ def optimize(tomography, groups, parameters, total_observations, optimizer="lbfg
     if learning_rate is None:
         learning_rate = 1.0 if optimizer == "lbfgs" else 0.01
     if optimizer == "lbfgs":
+        if learning_rates is not None:
+            raise ValueError("learning_rates are only used with Adam")
         optimizer = torch.optim.LBFGS(parameters, lr=learning_rate, max_iter=20, line_search_fn="strong_wolfe", tolerance_grad=1e-12, tolerance_change=1e-14)
     elif optimizer == "adam":
-        optimizer = torch.optim.Adam(parameters, lr=learning_rate)
+        if learning_rates is None:
+            optimizer = torch.optim.Adam(parameters, lr=learning_rate)
+        else:
+            if len(learning_rates) != len(parameters):
+                raise ValueError("learning_rates must have one value per trainable parameter")
+            optimizer = torch.optim.Adam(
+                [{"params": [parameter], "lr": rate} for parameter, rate in zip(parameters, learning_rates)]
+            )
     else:
         raise ValueError(f"optimizer must be 'lbfgs' or 'adam', got {optimizer!r}")
 
