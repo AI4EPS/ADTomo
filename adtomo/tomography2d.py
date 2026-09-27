@@ -1,10 +1,4 @@
-"""2-D eikonal tomography for a spherical 1-D model: travel-time prediction and the objective.
-
-A model ``v(depth)`` keeps every station-event ray in the great-circle plane
-through Earth's center, so each station's forward problem is a 2-D Cartesian
-eikonal solve on that section (:class:`~adtomo.grid.ForwardGrid2D`) with the
-station as the source.
-"""
+"""2-D eikonal tomography."""
 
 import eikonal2d_op
 import torch
@@ -28,7 +22,7 @@ class _Eikonal2D(torch.autograd.Function):
 
 
 def predict_travel_times_2d(model, grid, phase, events_spherical):
-    """P or S travel times from a station's fixed section to live event positions."""
+    """Compute P or S travel times at live event positions."""
     velocity = grid.sample_model({"P": model.vp, "S": model.vs}[phase.upper()], model.depth)
     if torch.any(velocity <= 0):
         raise ValueError("velocity must stay positive")
@@ -38,10 +32,7 @@ def predict_travel_times_2d(model, grid, phase, events_spherical):
 
 
 class Tomography2D(nn.Module):
-    """Arrival-time objective over a 1-D velocity model and trainable event parameters.
-
-    Same interface and conventions as :class:`~adtomo.tomography3d.Tomography`.
-    """
+    """Arrival-time objective for a depth-only velocity model."""
 
     def __init__(self, model, event_loc, beta_vp=0.0, beta_vs=0.0, alpha_vp=0.0, alpha_vs=0.0):
         super().__init__()
@@ -49,13 +40,18 @@ class Tomography2D(nn.Module):
         self.register_buffer("vp0", model.vp.detach().clone())
         self.register_buffer("vs0", model.vs.detach().clone())
         event_loc = torch.as_tensor(event_loc, dtype=torch.float64).detach().reshape(-1, 3).contiguous()
-        self.event_loc = nn.Parameter(event_loc.clone())
+        self.event_loc_hori = nn.Parameter(event_loc[:, :2].clone())
+        self.event_loc_vert = nn.Parameter(event_loc[:, 2].clone())
         self.event_time_correction = nn.Parameter(torch.zeros(len(event_loc), dtype=torch.float64))
         self.beta_vp = beta_vp
         self.beta_vs = beta_vs
         self.alpha_vp = alpha_vp
         self.alpha_vs = alpha_vs
         self.register_buffer("dz", model.depth[1:] - model.depth[:-1])
+
+    @property
+    def event_loc(self):
+        return torch.cat((self.event_loc_hori, self.event_loc_vert[:, None]), dim=1)
 
     def _smoothness(self, field):
         gradient = (field[1:] - field[:-1]) / self.dz

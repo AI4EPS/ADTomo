@@ -11,7 +11,7 @@ R_EARTH = 6371.0  # km
 
 
 class VelocityModel(nn.Module):
-    """Absolute Vp/Vs on a regular ``(depth, latitude, longitude)`` grid."""
+    """Absolute Vp&Vs on a regular ``(depth, latitude, longitude)`` grid."""
 
     def __init__(self, lon, lat, depth, vp, vs, trainable=True):
         super().__init__()
@@ -23,24 +23,22 @@ class VelocityModel(nn.Module):
 
 
 class VelocityModel1D(nn.Module):
-    """Absolute Vp/Vs as functions of spherical depth only."""
+    """Absolute Vp&Vs as functions of spherical depth."""
 
     def __init__(self, depth, vp, vs, trainable=True):
         super().__init__()
         depth = torch.as_tensor(depth, dtype=torch.float64)
-        assert depth.ndim == 1 and torch.all(depth[1:] > depth[:-1]), "depth must be a strictly increasing 1-D axis"
         self.register_buffer("depth", depth)
         self.vp = nn.Parameter(torch.as_tensor(vp, dtype=torch.float64).clone(), requires_grad=trainable)
         self.vs = nn.Parameter(torch.as_tensor(vs, dtype=torch.float64).clone(), requires_grad=trainable)
 
     @classmethod
     def from_3d(cls, model, trainable=True):
-        """The horizontal mean of a 3-D model: ``V(d) = mean_{lat, lon} V(d, lat, lon)``."""
         return cls(model.depth, model.vp.detach().mean(dim=(1, 2)), model.vs.detach().mean(dim=(1, 2)), trainable)
 
 
 def interpolate_1d(axis, values, query):
-    """Piecewise-linear interpolation of ``values`` on a strictly increasing 1-D ``axis``."""
+    """Piecewise-linear interpolation on the supplied axis."""
     upper = torch.searchsorted(axis, query.contiguous()).clamp(1, axis.numel() - 1)
     lower = upper - 1
     weight = (query - axis[lower]) / (axis[upper] - axis[lower])
@@ -96,14 +94,7 @@ def local_to_ecef(xyz, origin, basis):
 
 
 class ForwardGrid:
-    """A fixed East/North/Down box around one station for a 3-D model.
-
-    Coordinates are ``(x, y, z)`` = (East, North, Down) km with the station at
-    the origin; local fields use ``(z, y, x)`` tensor order. Every node samples
-    the global model at its own spherical position. ``padding`` (default
-    ``2 * spacing``) surrounds the build-time events; ``padding_above`` adds
-    room above the shallowest point so relocated events can move upward.
-    """
+    """Station-centered East/North/Down box for a 3-D model."""
 
     def __init__(self, station_spherical, events_spherical, model, spacing, padding=None, padding_above=0.0):
         self.spacing = float(spacing)
@@ -138,16 +129,16 @@ class ForwardGrid:
         )[None]
 
     def to_local(self, events_spherical):
-        """Event lon/lat/depth to East/North/Down km in this station's frame."""
+        """Map event longitude, latitude, depth to local East, North, Down."""
         events = torch.as_tensor(events_spherical, dtype=torch.float64).reshape(-1, 3)
         return ecef_to_local(spherical_to_ecef(events[:, 0], events[:, 1], events[:, 2]), self.station_ecef, self.basis)
 
     def sample_model(self, model_field):
-        """Differentiably sample a global ``(depth, latitude, longitude)`` field onto the box."""
+        """Sample a global ``(depth, latitude, longitude)`` field onto the box."""
         return F.grid_sample(model_field[None, None], self.sample_grid, mode="bilinear", padding_mode="border", align_corners=True)[0, 0]
 
     def sample_events(self, traveltime, events_spherical):
-        """Trilinearly sample a ``(z, y, x)`` field at live (possibly trainable) event positions."""
+        """Sample a local ``(z, y, x)`` travel-time field at event positions."""
         index = (self.to_local(events_spherical) - torch.stack([self.x[0], self.y[0], self.z[0]])) / self.spacing
         size = torch.tensor([len(self.x), len(self.y), len(self.z)], dtype=torch.float64)
         if torch.any(index < 0) or torch.any(index > size - 1):
@@ -157,17 +148,7 @@ class ForwardGrid:
 
 
 class ForwardGrid2D:
-    """A fixed Cartesian vertical section around one station for a 1-D model.
-
-    Coordinates are ``(x, y)`` = (horizontal distance, Down) km with the
-    station at the origin; fields use ``(y, x)`` tensor order. The section is
-    the azimuthal reduction of the East/North/Down frame: an event at local
-    ``(E, N, D)`` sits at ``(sqrt(E^2 + N^2), D)``, and node ``(x, 0, y)``
-    samples the model at its spherical depth ``R - sqrt(x^2 + (R - d_s - y)^2)``,
-    so layers stay curved in the section. Nodes shallower than the model's
-    first depth take its shallowest velocity. ``padding``/``padding_above`` as
-    in :class:`ForwardGrid`.
-    """
+    """Station-centered Cartesian section for a 1-D model."""
 
     def __init__(self, station_spherical, events_spherical, model, spacing, padding=None, padding_above=0.0):
         self.spacing = float(spacing)
@@ -191,18 +172,18 @@ class ForwardGrid2D:
         _, _, self.grid_depth = ecef_to_spherical(local_to_ecef(local, self.station_ecef, self.basis))
 
     def to_section(self, events_spherical):
-        """Event lon/lat/depth to ``(sqrt(E^2 + N^2), D)`` in this station's section."""
+        """Map events to horizontal distance and Down coordinates."""
         events = torch.as_tensor(events_spherical, dtype=torch.float64).reshape(-1, 3)
         local = ecef_to_local(spherical_to_ecef(events[:, 0], events[:, 1], events[:, 2]), self.station_ecef, self.basis)
         return torch.stack([torch.hypot(local[:, 0], local[:, 1]), local[:, 2]], dim=-1)
 
     def sample_model(self, model_field, model_depth):
-        """Differentiably map a depth-only field onto the section at each node's spherical depth."""
+        """Sample a depth-only model onto the section."""
         query_depth = self.grid_depth.clamp(min=model_depth[0], max=model_depth[-1])
         return interpolate_1d(model_depth, model_field, query_depth)
 
     def sample_events(self, traveltime, events_spherical):
-        """Bilinearly sample a ``(y, x)`` field at live (possibly trainable) event positions."""
+        """Sample a local ``(y, x)`` travel-time field at event positions."""
         index = (self.to_section(events_spherical) - torch.stack([self.x[0], self.y[0]])) / self.spacing
         size = torch.tensor([len(self.x), len(self.y)], dtype=torch.float64)
         if torch.any(index < 0) or torch.any(index > size - 1):

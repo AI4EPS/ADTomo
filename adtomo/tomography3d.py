@@ -1,4 +1,4 @@
-"""3-D eikonal tomography: travel-time prediction and the arrival-time objective."""
+"""3-D eikonal tomography."""
 
 import eikonal3d_op
 import torch
@@ -24,7 +24,7 @@ class _Eikonal3D(torch.autograd.Function):
 
 
 def predict_travel_times(model, grid, phase, events_spherical):
-    """P or S travel times from a station's fixed 3-D grid to live event positions."""
+    """Compute P or S travel times at live event positions."""
     velocity = grid.sample_model({"P": model.vp, "S": model.vs}[phase.upper()])
     if torch.any(velocity <= 0):
         raise ValueError("velocity must stay positive")
@@ -33,14 +33,7 @@ def predict_travel_times(model, grid, phase, events_spherical):
 
 
 class Tomography(nn.Module):
-    """Arrival-time objective over a 3-D velocity model and trainable event parameters.
-
-    ``event_loc`` (``(N, 3)`` lon/lat/depth) and ``event_time_correction``
-    (``N`` s) start from the catalog, so ``t_pred - t0_initial = dt0 + T``
-    against ``observed_phase_dt = phase_time - t0_initial``. Station groups are
-    ``[(grid, [(phase, event_indices, observed_phase_dt), ...]), ...]`` with
-    ``event_indices`` indexing ``event_loc``.
-    """
+    """Arrival-time objective with trainable velocity and event parameters."""
 
     def __init__(self, model, event_loc, beta_vp=0.0, beta_vs=0.0, alpha_vp=0.0, alpha_vs=0.0):
         super().__init__()
@@ -85,13 +78,6 @@ class Tomography(nn.Module):
         return (grad2 * self.volume).sum() / self.volume.sum()
 
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
-        """Data loss plus regularization.
-
-        ``data_scale`` replaces the mean over residuals (use ``1 /
-        total_observations`` when gradients are summed over ranks, with
-        ``regularization_scale = 1 / world_size`` so the regularization is
-        counted once).
-        """
         residuals = []
         for grid, phase_groups in station_groups:
             for phase, event_indices, observed_phase_dt in phase_groups:

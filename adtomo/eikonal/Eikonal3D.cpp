@@ -22,9 +22,9 @@ struct SourceCell {
 };
 
 static SourceCell make_source_cell(int nx, int ny, int nz, double h, double x, double y, double z) {
-    const int ix0 = (int)std::floor(x);
-    const int iy0 = (int)std::floor(y);
-    const int iz0 = (int)std::floor(z);
+    const int ix0 = std::max(0, std::min((int)std::floor(x), nx - 2));
+    const int iy0 = std::max(0, std::min((int)std::floor(y), ny - 2));
+    const int iz0 = std::max(0, std::min((int)std::floor(z), nz - 2));
     const int ix1 = ix0 + 1;
     const int iy1 = iy0 + 1;
     const int iz1 = iz0 + 1;
@@ -373,7 +373,7 @@ torch::Tensor eikonal_forward(torch::Tensor f, double h, double x, double y, dou
     int ny = f.size(1);
     int nz = f.size(0);
     TORCH_CHECK(nx >= 2 && ny >= 2 && nz >= 2, "f needs at least two nodes per axis");
-    TORCH_CHECK(x >= 0 && x < nx - 1 && y >= 0 && y < ny - 1 && z >= 0 && z < nz - 1,
+    TORCH_CHECK(x >= 0 && x <= nx - 1 && y >= 0 && y <= ny - 1 && z >= 0 && z <= nz - 1,
                 "source must lie inside a valid source cell");
 
     auto u = torch::zeros_like(f);
@@ -392,7 +392,7 @@ torch::Tensor eikonal_backward(torch::Tensor grad_u, torch::Tensor u, torch::Ten
     int ny = u.size(1);
     int nz = u.size(0);
     TORCH_CHECK(nx >= 2 && ny >= 2 && nz >= 2, "u needs at least two nodes per axis");
-    TORCH_CHECK(x >= 0 && x < nx - 1 && y >= 0 && y < ny - 1 && z >= 0 && z < nz - 1,
+    TORCH_CHECK(x >= 0 && x <= nx - 1 && y >= 0 && y <= ny - 1 && z >= 0 && z <= nz - 1,
                 "source must lie inside a valid source cell");
 
     auto grad_f = torch::zeros_like(f);

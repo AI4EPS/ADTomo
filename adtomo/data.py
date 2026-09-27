@@ -1,4 +1,4 @@
-"""Turn station, event, and pick tables into the station groups that tomography consumes."""
+"""Build station groups from catalog tables."""
 
 import numpy as np
 import pandas as pd
@@ -8,13 +8,6 @@ from .grid import ForwardGrid, ForwardGrid2D
 
 
 def build_station_groups(stations, events, picks, model, dimension, spacing, padding=None, padding_above=0.0, rank=0, world_size=1):
-    """``[(grid, [(phase, event_indices, observed_phase_dt), ...]), ...]`` for this rank's stations.
-
-    ``events`` is the initial catalog; ``event_indices`` index its rows and
-    ``observed_phase_dt = phase_time - event_time`` in seconds. Stations are
-    dealt round-robin across ranks. ``dimension`` selects
-    :class:`~adtomo.grid.ForwardGrid2D` (``"1d"``) or :class:`~adtomo.grid.ForwardGrid` (``"3d"``).
-    """
     Grid = {"1d": ForwardGrid2D, "3d": ForwardGrid}[dimension]
     event_index = pd.Index(events.event_id)
     pick_event_indices = event_index.get_indexer(picks.event_id)

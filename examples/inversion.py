@@ -67,7 +67,6 @@ try:
         groups,
         parameters,
         len(picks),
-        "adam",
         int(os.environ["ITERATIONS"]),
         learning_rates=learning_rates,
     )
