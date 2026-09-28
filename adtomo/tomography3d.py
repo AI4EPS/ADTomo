@@ -44,38 +44,57 @@ class Tomography(nn.Module):
         self.event_loc_hori = nn.Parameter(event_loc[:, :2].clone())
         self.event_loc_vert = nn.Parameter(event_loc[:, 2].clone())
         self.event_time_correction = nn.Parameter(torch.zeros(len(event_loc), dtype=torch.float64))
-        self.beta_vp = beta_vp
-        self.beta_vs = beta_vs
-        self.alpha_vp = alpha_vp
-        self.alpha_vs = alpha_vs
-        dz = model.depth[1:] - model.depth[:-1]
-        dphi = torch.deg2rad(model.lat[1:] - model.lat[:-1])
-        dlambda = torch.deg2rad(model.lon[1:] - model.lon[:-1])
-        radius = R_EARTH - model.depth[:-1]
-        cos_lat = torch.cos(torch.deg2rad(model.lat[:-1]))
+        self.beta_vp, self.beta_vs = beta_vp, beta_vs
+        self.alpha_vp, self.alpha_vs = alpha_vp, alpha_vs
+
+        depth = model.depth.detach().to(dtype=torch.float64)
+        phi = torch.deg2rad(model.lat.detach().to(dtype=torch.float64))
+        lam = torch.deg2rad(model.lon.detach().to(dtype=torch.float64))
+        radius = R_EARTH - depth
+        cos_lat = torch.cos(phi)
+
+        def dual(axis):
+            spacing = axis[1:] - axis[:-1]
+            weights = torch.empty_like(axis)
+            weights[0], weights[-1] = 0.5 * spacing[0], 0.5 * spacing[-1]
+            weights[1:-1] = 0.5 * (spacing[:-1] + spacing[1:])
+            return weights
+
         volume = (
             radius[:, None, None].square()
             * cos_lat[None, :, None]
-            * dz[:, None, None]
-            * dphi[None, :, None]
-            * dlambda[None, None, :]
+            * dual(depth)[:, None, None]
+            * dual(phi)[None, :, None]
+            * dual(lam)[None, None, :]
         )
-        for name, value in zip(("dz", "dphi", "dlambda", "radius", "cos_lat", "volume"), (dz, dphi, dlambda, radius, cos_lat, volume)):
+        for name, value in zip(
+            ("depth", "phi", "lam", "radius", "cos_lat", "volume"),
+            (depth, phi, lam, radius, cos_lat, volume),
+        ):
             self.register_buffer(name, value)
 
     @property
     def event_loc(self):
         return torch.cat((self.event_loc_hori, self.event_loc_vert[:, None]), dim=1)
 
-    def _smoothness(self, field):
-        reference = field[:-1, :-1, :-1]
-        grad_depth = (field[1:, :-1, :-1] - reference) / self.dz[:, None, None]
-        grad_lat = (field[:-1, 1:, :-1] - reference) / (self.radius[:, None, None] * self.dphi[None, :, None])
-        grad_lon = (field[:-1, :-1, 1:] - reference) / (
-            self.radius[:, None, None] * self.cos_lat[None, :, None] * self.dlambda[None, None, :]
-        )
-        grad2 = grad_depth.square() + grad_lat.square() + grad_lon.square()
-        return (grad2 * self.volume).sum() / self.volume.sum()
+    def damping(self, field):
+        return (field.square() * self.volume).sum() / self.volume.sum()
+
+    def smoothness(self, field):
+        def grad2(field, axis, dim):
+            field = field.transpose(0, dim)
+            gradient = (field[1:] - field[:-1]) / (axis[1:] - axis[:-1]).reshape(
+                (-1,) + (1,) * (field.ndim - 1)
+            )
+            gradient = torch.cat((gradient[:1], gradient, gradient[-1:]), dim=0)
+            return (0.5 * (gradient[:-1].square() + gradient[1:].square())).transpose(0, dim)
+
+        grad_depth = grad2(field, self.depth, 0)
+        grad_lat = grad2(field, self.phi, 1) / self.radius[:, None, None].square()
+        grad_lon = grad2(field, self.lam, 2) / (
+            self.radius[:, None, None] * self.cos_lat[None, :, None]
+        ).square()
+        return ((grad_depth + grad_lat + grad_lon) * self.volume).sum() / self.volume.sum()
 
     def forward(self, station_groups, data_scale=None, regularization_scale=1.0):
         residuals = []
@@ -83,25 +102,22 @@ class Tomography(nn.Module):
             for phase, event_indices, observed_phase_dt in phase_groups:
                 travel_time = predict_travel_times(self.model, grid, phase, self.event_loc[event_indices])
                 residuals.append(travel_time + self.event_time_correction[event_indices] - observed_phase_dt)
-        if residuals:
-            residual = torch.cat(residuals)
-        else:
-            residual = sum(parameter.sum() for parameter in self.parameters()).reshape(1) * 0.0
+        residual = torch.cat(residuals)
         data_sum = residual.square().sum()
         data_loss = data_sum / residual.numel() if data_scale is None else data_scale * data_sum
         regularization_loss = data_loss.new_zeros(())
         if self.alpha_vp != 0.0 or self.beta_vp != 0.0:
             dvp = self.model.vp - self.vp0
             if self.beta_vp != 0.0:
-                regularization_loss = regularization_loss + self.beta_vp * self._smoothness(dvp)
+                regularization_loss = regularization_loss + self.beta_vp * self.smoothness(dvp)
             if self.alpha_vp != 0.0:
-                regularization_loss = regularization_loss + self.alpha_vp * dvp.square().mean()
+                regularization_loss = regularization_loss + self.alpha_vp * self.damping(dvp)
         if self.alpha_vs != 0.0 or self.beta_vs != 0.0:
             dvs = self.model.vs - self.vs0
             if self.beta_vs != 0.0:
-                regularization_loss = regularization_loss + self.beta_vs * self._smoothness(dvs)
+                regularization_loss = regularization_loss + self.beta_vs * self.smoothness(dvs)
             if self.alpha_vs != 0.0:
-                regularization_loss = regularization_loss + self.alpha_vs * dvs.square().mean()
+                regularization_loss = regularization_loss + self.alpha_vs * self.damping(dvs)
         loss = data_loss + regularization_scale * regularization_loss
         self.data_sum = data_sum.detach()
         return loss
