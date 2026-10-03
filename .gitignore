@@ -6,7 +6,13 @@
 *.png
 *.csv
 *.json
+*.npz
+*.log
 *.egg
+
+examples/results/
+examples/figures/
+.venv/
 
 adtomo/eigen
 adtomo/libtorch/
