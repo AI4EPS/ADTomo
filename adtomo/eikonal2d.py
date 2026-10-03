@@ -37,6 +37,13 @@ def interp2d(time_table, r, z, rgrid, zgrid, h):
     return t
 
 
+VPVS_RATIO_LOWER_BOUND = np.sqrt(4.0 / 3.0)  # Vp/Vs at zero bulk modulus (Poisson's ratio -1); no material is below it
+
+## Expected variation of each inverted parameter; its penalties are divided by it. Vp/Vs varies about 4x less than
+## velocity, i.e. 0.25 in log(Vp/Vs), which is about 0.75 in its parameter log(Vp/Vs - bound) near Vp/Vs = 1.73.
+SCALE = {"vp": 1.0, "vs": 1.0, "vpvs_ratio": 0.75}
+
+
 class Eikonal2DFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, f, h, x, y):
@@ -79,14 +86,12 @@ class Eikonal2D(torch.nn.Module):
         event_time,
         vp,
         vs,
-        max_dvp=0.0,
-        max_dvs=0.0,
-        lambda_dvp=0.0,
-        lambda_dvs=0.0,
-        lambda_sp_ratio=0.0,
-        beta_dvp=0.0,
-        beta_dvs=0.0,
-        beta_sp_ratio=0.0,
+        vpvs_ratio=None,
+        sigma_t=1.0,
+        lambda_smooth=0.0,
+        lambda_damp=0.0,
+        lambda_monotonic=0.0,
+        smooth_kernels=None,
         config=None,
         dtype=torch.float64,
     ):
@@ -106,38 +111,30 @@ class Eikonal2D(torch.nn.Module):
         self.event_time.weight = torch.nn.Parameter(
             torch.tensor(event_time, dtype=dtype).contiguous(), requires_grad=False
         )
-        self.vp0 = vp
-        self.vs0 = vs
-        self.dvp = torch.nn.Parameter(torch.zeros_like(vp), requires_grad=True)
-        self.dvs = torch.nn.Parameter(torch.zeros_like(vs), requires_grad=True)
-        self.max_dvp = max_dvp
-        self.max_dvs = max_dvs
-        self.lambda_dvp = lambda_dvp
-        self.lambda_dvs = lambda_dvs
-        self.lambda_sp_ratio = lambda_sp_ratio
-        self.beta_dvp = beta_dvp
-        self.beta_dvs = beta_dvs
-        self.beta_sp_ratio = beta_sp_ratio
-
-        # self.smooth_kernel = torch.ones([1, 1, 5, 5], dtype=dtype) / (5 * 5)
-        # self.smooth_kernel = torch.tensor([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], dtype=dtype).view(1, 1, 3, 3)
-        self.smooth_kernel = torch.tensor(
-            [
-                [-1, 1],
-                [1, -1],
-            ],
-            dtype=dtype,
-        ).view(1, 1, 2, 2)
-        self.smooth_kernel = self.smooth_kernel / self.smooth_kernel.abs().sum()
-
-        # set config
         nx, ny, h = config["nx"], config["ny"], config["h"]
-        xgrid, ygrid = config["xgrid"], config["ygrid"]
-        self.nx = nx
-        self.ny = ny
-        self.h = h
-        self.xgrid = xgrid
-        self.ygrid = ygrid
+        self.nx, self.ny, self.h = nx, ny, h
+        self.xgrid, self.ygrid = config["xgrid"], config["ygrid"]
+
+        ## inverted variables: (vp, vs), or (vs, vpvs_ratio) when vpvs_ratio is given (vp input is then ignored);
+        ## each may be a scalar, 1D along axis 1 (ny), or 2D (nx, ny), and is expanded to 2D in velocity()
+        ## Parameters are log velocity and log(Vp/Vs - bound): differences are relative changes, so every penalty is
+        ## dimensionless, velocity stays positive and Vp/Vs stays above its physical bound.
+        values = {"vs": vs, "vpvs_ratio": vpvs_ratio} if vpvs_ratio is not None else {"vp": vp, "vs": vs}
+        self.offset = {"vp": 0.0, "vs": 0.0, "vpvs_ratio": VPVS_RATIO_LOWER_BOUND}
+        self.init = {name: torch.log(torch.as_tensor(value, dtype=dtype) - self.offset[name]) for name, value in values.items()}
+        self.params = nn.ParameterDict({name: nn.Parameter(value.clone()) for name, value in self.init.items()})
+
+        ## loss = mean((residual / sigma_t)^2)
+        ##      + sum over parameters m of [lambda_smooth * mean|kernels * m| + lambda_damp * mean|m - m_init|] / SCALE
+        ##      + lambda_monotonic * mean relu(velocity decrease with depth), for 1D velocity
+        ## where |.| and relu are smoothed within eps = 1e-3 of zero (smooth_l1_loss, softplus), so LBFGS sees a smooth loss
+        self.sigma_t = sigma_t  # pick uncertainty (s)
+        self.lambda_smooth = lambda_smooth
+        self.lambda_damp = lambda_damp
+        self.lambda_monotonic = lambda_monotonic
+        ## smoothing kernels by parameter dimension; default: first difference per km along each axis (2D: x, then z)
+        d = torch.tensor([-1.0, 1.0], dtype=dtype) / h
+        self.smooth_kernels = {1: [d], 2: [d.view(2, 1), d.view(1, 2)]} | (smooth_kernels or {})
 
     # def interp(self, time_table, x, y):
 
@@ -191,19 +188,19 @@ class Eikonal2D(torch.nn.Module):
 
         return t
 
+    def velocity(self):
+        """Return the 2D (vp, vs) fields from the inversion parameters."""
+        m = {name: (self.offset[name] + torch.exp(x)).expand(self.nx, self.ny) for name, x in self.params.items()}
+        vp = m["vpvs_ratio"] * m["vs"] if "vpvs_ratio" in m else m["vp"]
+        return vp, m["vs"]
+
     def forward(self, picks):
         loss = torch.tensor(0.0, dtype=self.dtype)
         preds = []
         idx = []
+        residuals = []
 
-        if self.max_dvp > 0 or self.max_dvs > 0:
-            dvp = torch.tanh(self.dvp / self.max_dvp) * self.max_dvp
-            dvs = torch.tanh(self.dvs / self.max_dvs) * self.max_dvs
-        else:
-            dvp = self.dvp
-            dvs = self.dvs
-        vp = self.vp0 + dvp
-        vs = self.vs0 + dvs
+        vp, vs = self.velocity()
 
         ## idx_sta an idx_eve are used internally to ensure continous index
         for (idx_sta_, phase_type_), picks_ in picks.groupby(["idx_sta", "phase_type"]):
@@ -249,21 +246,23 @@ class Eikonal2D(torch.nn.Module):
             )  # travel time
             pred = event_time.squeeze(-1) + tt  # arrival time
             preds.append(pred.detach().numpy())
-            loss += F.mse_loss(pred, obs)
+            residuals.append(pred - obs)
 
-        if self.lambda_dvp > 0:
-            loss += self.lambda_dvp * F.conv2d(dvp[None, None], self.smooth_kernel).abs().sum()
-        if self.lambda_dvs > 0:
-            loss += self.lambda_dvs * F.conv2d(dvs[None, None], self.smooth_kernel).abs().sum()
-        if self.lambda_sp_ratio > 0:
-            loss += self.lambda_sp_ratio * F.conv2d((vs / vp)[None, None], self.smooth_kernel).abs().sum()
+        ## data misfit: mean squared residual over all picks, in units of the pick uncertainty
+        loss += (torch.cat(residuals) / self.sigma_t).pow(2).mean()
 
-        if self.beta_dvp > 0:
-            loss += self.beta_dvp * dvp.abs().sum()
-        if self.beta_dvs > 0:
-            loss += self.beta_dvs * dvs.abs().sum()
-        if self.beta_sp_ratio > 0:
-            loss += self.beta_sp_ratio * (vs / vp).abs().sum()
+        ## regularization on each parameter at its own shape
+        eps = 1e-3
+        for name, x in self.params.items():
+            if self.lambda_smooth > 0 and x.dim() > 0:
+                conv = F.conv1d if x.dim() == 1 else F.conv2d
+                r = torch.cat([conv(x[None, None], k[None, None]).flatten() for k in self.smooth_kernels[x.dim()]])
+                loss += self.lambda_smooth * F.smooth_l1_loss(r, torch.zeros_like(r), beta=eps) / SCALE[name]
+            if self.lambda_damp > 0:
+                loss += self.lambda_damp * F.smooth_l1_loss(x, self.init[name], beta=eps) / SCALE[name]
+            if self.lambda_monotonic > 0 and name in ("vp", "vs") and x.dim() == 1:
+                d = x[:-1] - x[1:]  # positive where velocity decreases with depth
+                loss += self.lambda_monotonic * F.softplus(d, beta=1 / eps).mean()
 
         pred_df = pd.DataFrame(
             {
@@ -455,8 +454,7 @@ if __name__ == "__main__":
 
     ######################################### Optimize #########################################
     # %%
-    vp = eikonal2d.vp0.detach().numpy() + eikonal2d.dvp.detach().numpy()
-    vs = eikonal2d.vs0.detach().numpy() + eikonal2d.dvs.detach().numpy()
+    vp, vs = [v.detach().numpy() for v in eikonal2d.velocity()]
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
     im = ax[0].imshow(vp, cmap="viridis")
     fig.colorbar(im, ax=ax[0])
@@ -466,8 +464,8 @@ if __name__ == "__main__":
     ax[1].set_title("Vs")
     plt.savefig(f"{data_path}/initial2d_vp_vs.png")
 
-    eikonal2d.dvp.requires_grad = True
-    eikonal2d.dvs.requires_grad = True
+    eikonal2d.params["vp"].requires_grad = True
+    eikonal2d.params["vs"].requires_grad = True
     eikonal2d.event_loc.weight.requires_grad = False
     eikonal2d.event_time.weight.requires_grad = False
     print(
@@ -490,8 +488,7 @@ if __name__ == "__main__":
     preds, loss = eikonal2d(picks)
     print("Final loss:", loss.item())
 
-    vp = eikonal2d.vp0.detach().numpy() + eikonal2d.dvp.detach().numpy()
-    vs = eikonal2d.vs0.detach().numpy() + eikonal2d.dvs.detach().numpy()
+    vp, vs = [v.detach().numpy() for v in eikonal2d.velocity()]
     fig, ax = plt.subplots(1, 2, figsize=(12, 5))
     im = ax[0].imshow(vp, cmap="viridis")
     fig.colorbar(im, ax=ax[0])

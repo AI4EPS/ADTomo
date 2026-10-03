@@ -225,12 +225,8 @@ if __name__ == "__main__":
     # event_loc = events[["x_km", "y_km"]].values + np.random.randn(num_event, 2) * 10
     # event_loc = events[["x_km", "y_km"]].values * 0.0 + stations[["x_km", "y_km"]].values.mean(axis=0)
 
-    lambda_dvp = 1e-4
-    lambda_dvs = 1e-4
-    lambda_sp_ratio = 1e-4
-    beta_dvp = 1e-4
-    beta_dvs = 1e-4
-    beta_sp_ratio = 1e-4
+    lambda_smooth = 1e-4
+    lambda_damp = 1e-4
     eikonal2d = Eikonal2D(
         num_event,
         num_station,
@@ -242,20 +238,15 @@ if __name__ == "__main__":
         vs,
         # max_dvp=1.0,
         # max_dvs=0.5,
-        lambda_dvp=lambda_dvp,
-        lambda_dvs=lambda_dvs,
-        lambda_sp_ratio=lambda_sp_ratio,
-        beta_dvp=beta_dvp,
-        beta_dvs=beta_dvs,
-        beta_sp_ratio=beta_sp_ratio,
+        lambda_smooth=lambda_smooth,
+        lambda_damp=lambda_damp,
         config=eikonal_config,
     )
     preds, loss = eikonal2d(picks)
 
     ######################################### Optimize #########################################
     # %%
-    vp = eikonal2d.vp0.detach().numpy() + eikonal2d.dvp.detach().numpy()
-    vs = eikonal2d.vs0.detach().numpy() + eikonal2d.dvs.detach().numpy()
+    vp, vs = [v.detach().numpy() for v in eikonal2d.velocity()]
     fig, ax = plt.subplots(1, 2, figsize=(10, 5))
     im = ax[0].imshow(vp.T, cmap="bwr_r", vmin=vp_min, vmax=vp_max, origin="lower")
     fig.colorbar(im, ax=ax[0])
@@ -269,8 +260,8 @@ if __name__ == "__main__":
     picks = picks[picks["idx_sta"] % ddp_world_size == ddp_local_rank]
     print(f"Rank {ddp_rank} has {len(picks)} picks")
 
-    eikonal2d.dvp.requires_grad = True
-    eikonal2d.dvs.requires_grad = True
+    eikonal2d.params["vp"].requires_grad = True
+    eikonal2d.params["vs"].requires_grad = True
     eikonal2d.event_loc.weight.requires_grad = False
     eikonal2d.event_time.weight.requires_grad = False
     if ddp_local_rank == 0:
@@ -330,8 +321,7 @@ if __name__ == "__main__":
     if ddp_local_rank == 0:
         print("Final loss:", loss.item())
 
-        vp = raw_eikonal2d.vp0.detach().numpy() + raw_eikonal2d.dvp.detach().numpy()
-        vs = raw_eikonal2d.vs0.detach().numpy() + raw_eikonal2d.dvs.detach().numpy()
+        vp, vs = [v.detach().numpy() for v in raw_eikonal2d.velocity()]
         fig, ax = plt.subplots(1, 2, figsize=(10, 5))
         im = ax[0].imshow(vp.T, cmap="bwr_r", vmin=vp_min, vmax=vp_max, origin="lower")
         fig.colorbar(im, ax=ax[0])
@@ -341,7 +331,7 @@ if __name__ == "__main__":
         ax[1].set_title("Vs")
         plt.savefig(f"{figure_path}/inverted2d_vp_vs.png", bbox_inches="tight")
         plt.savefig(
-            f"{figure_path}/inverted2d_vp_vs_{lambda_dvp:.0e}_{lambda_dvs:.0e}_{lambda_sp_ratio:.0e}.png",
+            f"{figure_path}/inverted2d_vp_vs_{lambda_smooth:.0e}_{lambda_damp:.0e}.png",
             bbox_inches="tight",
         )
 
