@@ -90,9 +90,9 @@ void sweeping(double *u, const double *f, int m, int n, int l, double h, int ix0
 void forward(double *u, const double *f, double h,
              int m, int n, int l, double x, double y, double z, double tol = 1e-8)
 {
-    int ix0 = std::max(0, std::min((int)floor(x), m - 1));
-    int jx0 = std::max(0, std::min((int)floor(y), n - 1));
-    int kx0 = std::max(0, std::min((int)floor(z), l - 1));
+    int ix0 = std::max(0, std::min((int)floor(x), m - 2));  // m, n, l count nodes: the last cell starts at m - 2
+    int jx0 = std::max(0, std::min((int)floor(y), n - 2));
+    int kx0 = std::max(0, std::min((int)floor(z), l - 2));
     int ix1 = ix0 + 1;
     int jx1 = jx0 + 1;
     int kx1 = kx0 + 1;
@@ -173,9 +173,9 @@ void backward(
     int m, int n, int l, double x, double y, double z)
 {
 
-    int ix0 = std::max(0, std::min((int)floor(x), m - 1));
-    int jx0 = std::max(0, std::min((int)floor(y), n - 1));
-    int kx0 = std::max(0, std::min((int)floor(z), l - 1));
+    int ix0 = std::max(0, std::min((int)floor(x), m - 2));
+    int jx0 = std::max(0, std::min((int)floor(y), n - 2));
+    int kx0 = std::max(0, std::min((int)floor(z), l - 2));
     int ix1 = ix0 + 1;
     int jx1 = jx0 + 1;
     int kx1 = kx0 + 1;

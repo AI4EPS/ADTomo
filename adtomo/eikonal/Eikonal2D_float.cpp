@@ -166,8 +166,8 @@ void backward(
     const double *grad_u,
     const double *u, const double *f, int m, int n, double h, double x, double y)
 {
-  int ix0 = std::max(0, std::min((int)floor(x), m));
-  int jx0 = std::max(0, std::min((int)floor(y), n));
+  int ix0 = std::max(0, std::min((int)floor(x), m - 1));
+  int jx0 = std::max(0, std::min((int)floor(y), n - 1));
   int ix1 = ix0 + 1;
   int jx1 = jx0 + 1;
 
