@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
     # Compute some loss (e.g., mean of u)
     # loss = u.mean()
-    loss = u[m - 2, n - 2, z]
+    loss = u[m - 1, n - 1, z]  # the last node, as in test_eikonal2d_op.py
 
     # Backward pass
     loss.backward()
