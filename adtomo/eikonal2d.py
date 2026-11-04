@@ -8,33 +8,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from adtomo.interp import interp
+
 
 def interp2d(time_table, r, z, rgrid, zgrid, h):
-    nr = len(rgrid)
-    nz = len(zgrid)
-    assert time_table.shape == (nr, nz)
-
-    ir0 = np.floor((r - rgrid[0]) / h).clip(0, nr - 2).astype(int)
-    iz0 = np.floor((z - zgrid[0]) / h).clip(0, nz - 2).astype(int)
-    ir1 = ir0 + 1
-    iz1 = iz0 + 1
-    r = (np.clip(r, rgrid[0], rgrid[-1]) - rgrid[0]) / h
-    z = (np.clip(z, zgrid[0], zgrid[-1]) - zgrid[0]) / h
-
-    ## https://en.wikipedia.org/wiki/Bilinear_interpolation
-    Q00 = time_table[ir0, iz0]
-    Q01 = time_table[ir0, iz1]
-    Q10 = time_table[ir1, iz0]
-    Q11 = time_table[ir1, iz1]
-
-    t = (
-        Q00 * (ir1 - r) * (iz1 - z)
-        + Q10 * (r - ir0) * (iz1 - z)
-        + Q01 * (ir1 - r) * (z - iz0)
-        + Q11 * (r - ir0) * (z - iz0)
-    )
-
-    return t
+    """The model's bicubic interpolation (interp) for numpy tables and coordinates, e.g. for synthetic picks."""
+    assert time_table.shape == (len(rgrid), len(zgrid))
+    x = [torch.as_tensor((np.asarray(v, dtype=float) - g[0]) / h) for v, g in ((r, rgrid), (z, zgrid))]
+    t = interp(torch.as_tensor(time_table, dtype=torch.float64), *x).numpy()
+    return t if t.ndim else float(t)
 
 
 VPVS_RATIO_LOWER_BOUND = np.sqrt(4.0 / 3.0)  # Vp/Vs at zero bulk modulus (Poisson's ratio -1); no material is below it
@@ -59,20 +41,6 @@ class Eikonal2DFunction(torch.autograd.Function):
         u, f = ctx.saved_tensors
         grad_f = eikonal2d_op.backward(grad_output, u, f, ctx.h, ctx.x, ctx.y)
         return grad_f, None, None, None
-
-
-class Clamp(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, min, max):
-        return input.clamp(min=min, max=max)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output, None, None
-
-
-def clamp(input, min, max):
-    return Clamp.apply(input, min, max)
 
 
 class Eikonal2D(torch.nn.Module):
@@ -164,29 +132,8 @@ class Eikonal2D(torch.nn.Module):
     #     return t
 
     def interp(self, time_table, x, y):
-        nx, ny = time_table.shape
-        ix0 = torch.floor(x).clamp(0, nx - 2).long()
-        iy0 = torch.floor(y).clamp(0, ny - 2).long()
-        ix1 = ix0 + 1
-        iy1 = iy0 + 1
-        x = clamp(x, 0, nx - 1)
-        y = clamp(y, 0, ny - 1)
-
-        ## https://en.wikipedia.org/wiki/Bilinear_interpolation
-
-        Q00 = time_table[ix0, iy0]
-        Q01 = time_table[ix0, iy1]
-        Q10 = time_table[ix1, iy0]
-        Q11 = time_table[ix1, iy1]
-
-        t = (
-            Q00 * (ix1 - x) * (iy1 - y)
-            + Q10 * (x - ix0) * (iy1 - y)
-            + Q01 * (ix1 - x) * (y - iy0)
-            + Q11 * (x - ix0) * (y - iy0)
-        )
-
-        return t
+        """Bicubic travel time at grid coordinates x, y (in nodes)."""
+        return interp(time_table, x, y)
 
     def velocity(self):
         """Return the 2D (vp, vs) fields from the inversion parameters."""
