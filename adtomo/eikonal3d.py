@@ -10,44 +10,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from adtomo.interp import interp
+
 
 def interp3d(time_table, x, y, z, xgrid, ygrid, zgrid, h):
-    nx = len(xgrid)
-    ny = len(ygrid)
-    nz = len(zgrid)
-    assert time_table.shape == (nx, ny, nz)
-
-    ix0 = np.floor((x - xgrid[0]) / h).clip(0, nx - 2).astype(int)
-    iy0 = np.floor((y - ygrid[0]) / h).clip(0, ny - 2).astype(int)
-    iz0 = np.floor((z - zgrid[0]) / h).clip(0, nz - 2).astype(int)
-    ix1 = ix0 + 1
-    iy1 = iy0 + 1
-    iz1 = iz0 + 1
-    x = (np.clip(x, xgrid[0], xgrid[-1]) - xgrid[0]) / h
-    y = (np.clip(y, ygrid[0], ygrid[-1]) - ygrid[0]) / h
-    z = (np.clip(z, zgrid[0], zgrid[-1]) - zgrid[0]) / h
-
-    Q000 = time_table[ix0, iy0, iz0]
-    Q100 = time_table[ix1, iy0, iz0]
-    Q010 = time_table[ix0, iy1, iz0]
-    Q110 = time_table[ix1, iy1, iz0]
-    Q001 = time_table[ix0, iy0, iz1]
-    Q101 = time_table[ix1, iy0, iz1]
-    Q011 = time_table[ix0, iy1, iz1]
-    Q111 = time_table[ix1, iy1, iz1]
-
-    t = (
-        Q000 * (ix1 - x) * (iy1 - y) * (iz1 - z)
-        + Q100 * (x - ix0) * (iy1 - y) * (iz1 - z)
-        + Q010 * (ix1 - x) * (y - iy0) * (iz1 - z)
-        + Q110 * (x - ix0) * (y - iy0) * (iz1 - z)
-        + Q001 * (ix1 - x) * (iy1 - y) * (z - iz0)
-        + Q101 * (x - ix0) * (iy1 - y) * (z - iz0)
-        + Q011 * (ix1 - x) * (y - iy0) * (z - iz0)
-        + Q111 * (x - ix0) * (y - iy0) * (z - iz0)
-    )
-
-    return t
+    """The model's tricubic interpolation (interp) for numpy tables and coordinates, e.g. for synthetic picks."""
+    assert time_table.shape == (len(xgrid), len(ygrid), len(zgrid))
+    q = [torch.as_tensor((np.asarray(v, dtype=float) - g[0]) / h) for v, g in ((x, xgrid), (y, ygrid), (z, zgrid))]
+    t = interp(torch.as_tensor(time_table, dtype=torch.float64), *q).numpy()
+    return t if t.ndim else float(t)
 
 
 class Eikonal3DFunction(torch.autograd.Function):
@@ -73,20 +44,6 @@ VPVS_RATIO_LOWER_BOUND = np.sqrt(4.0 / 3.0)  # Vp/Vs at zero bulk modulus (Poiss
 ## Expected variation of each inverted parameter; its penalties are divided by it. Vp/Vs varies about 4x less than
 ## velocity, i.e. 0.25 in log(Vp/Vs), which is about 0.75 in its parameter log(Vp/Vs - bound) near Vp/Vs = 1.73.
 SCALE = {"vp": 1.0, "vs": 1.0, "vpvs_ratio": 0.75}
-
-
-class Clamp(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input, min, max):
-        return input.clamp(min=min, max=max)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output, None, None
-
-
-def clamp(input, min, max):
-    return Clamp.apply(input, min, max)
 
 
 class Eikonal3D(torch.nn.Module):
@@ -157,40 +114,9 @@ class Eikonal3D(torch.nn.Module):
         self.smooth_kernels = {1: [d], 3: [d.view(2, 1, 1), d.view(1, 2, 1), d.view(1, 1, 2)]} | (smooth_kernels or {})
 
     def interp(self, time_table, x, y, z):
-        ix0 = torch.floor((x - self.xgrid[0]) / self.h).clamp(0, self.nx - 2).long()
-        iy0 = torch.floor((y - self.ygrid[0]) / self.h).clamp(0, self.ny - 2).long()
-        iz0 = torch.floor((z - self.zgrid[0]) / self.h).clamp(0, self.nz - 2).long()
-        ix1 = ix0 + 1
-        iy1 = iy0 + 1
-        iz1 = iz0 + 1
-        # x = (torch.clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        # y = (torch.clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        # z = (torch.clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
-        x = (clamp(x, self.xgrid[0], self.xgrid[-1]) - self.xgrid[0]) / self.h
-        y = (clamp(y, self.ygrid[0], self.ygrid[-1]) - self.ygrid[0]) / self.h
-        z = (clamp(z, self.zgrid[0], self.zgrid[-1]) - self.zgrid[0]) / self.h
-
-        Q000 = time_table[ix0, iy0, iz0]
-        Q100 = time_table[ix1, iy0, iz0]
-        Q010 = time_table[ix0, iy1, iz0]
-        Q110 = time_table[ix1, iy1, iz0]
-        Q001 = time_table[ix0, iy0, iz1]
-        Q101 = time_table[ix1, iy0, iz1]
-        Q011 = time_table[ix0, iy1, iz1]
-        Q111 = time_table[ix1, iy1, iz1]
-
-        t = (
-            Q000 * (ix1 - x) * (iy1 - y) * (iz1 - z)
-            + Q100 * (x - ix0) * (iy1 - y) * (iz1 - z)
-            + Q010 * (ix1 - x) * (y - iy0) * (iz1 - z)
-            + Q110 * (x - ix0) * (y - iy0) * (iz1 - z)
-            + Q001 * (ix1 - x) * (iy1 - y) * (z - iz0)
-            + Q101 * (x - ix0) * (iy1 - y) * (z - iz0)
-            + Q011 * (ix1 - x) * (y - iy0) * (z - iz0)
-            + Q111 * (x - ix0) * (y - iy0) * (z - iz0)
-        )
-
-        return t
+        """Tricubic travel time at x, y, z (km)."""
+        grid0 = (self.xgrid[0], self.ygrid[0], self.zgrid[0])
+        return interp(time_table, *[(v - g) / self.h for v, g in zip((x, y, z), grid0)])
 
     def velocity(self):
         """Return the 3D (vp, vs) fields from the inversion parameters."""
